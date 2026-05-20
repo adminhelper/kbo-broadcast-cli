@@ -10,14 +10,19 @@ from rich.table import Table
 from rich.text import Text
 
 from .data.cheer_songs import cheer
-from .data.teams import colored, team
+from .data.teams import colored, normalize, team
 from .models import Game, TeamRank
 
 
 # ────────────────────────── 일정/결과 ──────────────────────────
 
 
-def schedule_table(games: Iterable[Game], title: str = "오늘의 KBO 경기") -> Table:
+def schedule_table(
+    games: Iterable[Game],
+    title: str = "오늘의 KBO 경기",
+    favorite: str | None = None,
+) -> Table:
+    fav = normalize(favorite) if favorite else ""
     t = Table(title=title, title_style="bold cyan", header_style="bold")
     t.add_column("시간", justify="center", width=6)
     t.add_column("원정 (선공)", justify="right")
@@ -28,9 +33,19 @@ def schedule_table(games: Iterable[Game], title: str = "오늘의 KBO 경기") -
     t.add_column("중계", style="dim")
     t.add_column("Game ID", style="dim")
 
-    for g in games:
+    # 선호 팀 경기가 있으면 맨 위로 정렬
+    games_list = list(games)
+    if fav:
+        games_list.sort(
+            key=lambda g: 0 if fav in {normalize(g.home_team_code), normalize(g.away_team_code)} else 1
+        )
+
+    for g in games_list:
         away = colored(g.away_team_code, g.away_team_name)
         home = colored(g.home_team_code, g.home_team_name)
+        is_fav = fav and fav in {normalize(g.home_team_code), normalize(g.away_team_code)}
+        if is_fav:
+            away = f"⭐ {away}"
         if g.is_finished:
             score = f"[bold]{g.away_team_score} : {g.home_team_score}[/]"
         elif g.status_code == "STARTED":
@@ -44,6 +59,7 @@ def schedule_table(games: Iterable[Game], title: str = "오늘의 KBO 경기") -
         }.get(g.status_code or "", "white")
         if g.cancel:
             status_color = "red"
+        row_style = "on grey15" if is_fav else None
         t.add_row(
             g.start_time,
             away,
@@ -53,6 +69,7 @@ def schedule_table(games: Iterable[Game], title: str = "오늘의 KBO 경기") -
             f"[{status_color}]{g.display_status}[/]",
             g.broad_channel or "-",
             g.game_id,
+            style=row_style,
         )
     return t
 
@@ -60,7 +77,8 @@ def schedule_table(games: Iterable[Game], title: str = "오늘의 KBO 경기") -
 # ────────────────────────── 순위표 ──────────────────────────
 
 
-def standings_table(ranks: list[TeamRank]) -> Table:
+def standings_table(ranks: list[TeamRank], favorite: str | None = None) -> Table:
+    fav = normalize(favorite) if favorite else ""
     t = Table(title="KBO 팀 순위", title_style="bold cyan", header_style="bold")
     t.add_column("순위", justify="center")
     t.add_column("팀")
@@ -77,9 +95,13 @@ def standings_table(ranks: list[TeamRank]) -> Table:
         # 1·2·3위는 메달 컬러
         rank_style = {1: "[bold yellow]", 2: "[bold white]", 3: "[bold orange3]"}.get(r.rank, "")
         rank_close = "[/]" if rank_style else ""
+        is_fav = fav and normalize(r.team_code) == fav
+        team_label = colored(r.team_code, r.team_name)
+        if is_fav:
+            team_label = f"⭐ {team_label}"
         t.add_row(
             f"{rank_style}{r.rank}{rank_close}",
-            colored(r.team_code, r.team_name),
+            team_label,
             str(r.games),
             str(r.wins),
             str(r.draws),
@@ -88,6 +110,7 @@ def standings_table(ranks: list[TeamRank]) -> Table:
             "-" if r.games_behind == 0 else f"{r.games_behind:.1f}",
             r.recent10,
             r.streak,
+            style="on grey15" if is_fav else None,
         )
     return t
 
