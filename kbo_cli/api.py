@@ -143,7 +143,7 @@ def _parse_kbo_standings(html: str) -> list[TeamRank]:
         return []
 
     name_to_code = {
-        "KIA": "HT", "삼성": "SS", "LG": "LG", "두산": "OB", "SSG": "SK",
+        "KIA": "KIA", "삼성": "SS", "LG": "LG", "두산": "OB", "SSG": "SSG",
         "롯데": "LT", "KT": "KT", "키움": "WO", "한화": "HH", "NC": "NC",
     }
 

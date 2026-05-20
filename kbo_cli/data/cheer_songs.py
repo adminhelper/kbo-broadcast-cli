@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 CHEER: dict[str, dict[str, list[str] | str]] = {
-    "HT": {
+    "KIA": {
         "battle_cry": "아 ~ 기아 타이거즈! 승리를 위하여!",
         "songs": ["KIA 응원가 메들리", "남행열차 (개사)", "최강 KIA"],
         "famous_chant": "최강 KIA! 최강 KIA!",
@@ -26,7 +26,7 @@ CHEER: dict[str, dict[str, list[str] | str]] = {
         "songs": ["두산 베어스 송", "안타송", "Drink Beer"],
         "famous_chant": "두산 베어스! 두산 베어스!",
     },
-    "SK": {
+    "SSG": {
         "battle_cry": "SSG 랜더스! 인천의 자존심!",
         "songs": ["랜더스 응원가", "연안부두 (개사)", "Let's Go SSG"],
         "famous_chant": "SSG! 랜더스!",
@@ -60,7 +60,8 @@ CHEER: dict[str, dict[str, list[str] | str]] = {
 
 
 def cheer(team_code: str) -> dict[str, list[str] | str]:
-    return CHEER.get(team_code.upper(), {
+    from .teams import normalize
+    return CHEER.get(normalize(team_code), {
         "battle_cry": "-",
         "songs": [],
         "famous_chant": "-",
