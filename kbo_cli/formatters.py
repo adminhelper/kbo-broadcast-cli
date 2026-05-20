@@ -168,22 +168,60 @@ def _diamond(bases: list[bool]) -> Text:
 # ────────────────────────── 문자중계 ──────────────────────────
 
 
-def text_relay_lines(relay: dict[str, Any], limit: int = 20) -> Group:
-    """relay.textRelays (또는 비슷한 키) 를 위→아래 최신순으로 렌더."""
-    items = (
-        relay.get("textRelays")
-        or relay.get("textRelayList")
-        or relay.get("relays")
-        or []
-    )
+def text_relay_lines(relay: dict[str, Any] | list[dict], limit: int | None = 20) -> Group:
+    """문자중계 렌더. relay는 textRelayData dict 또는 미리 합쳐둔 list.
+
+    Naver schema:
+      - title: "3회말 삼성 공격" / "4번타자 디아즈" / 이벤트 요약
+      - inn: 이닝
+      - homeOrAway: "0"(원정/초) / "1"(홈/말)
+      - no, seqno: 이벤트 순서
+    """
+    if isinstance(relay, list):
+        items = relay
+    else:
+        items = (
+            relay.get("textRelays")
+            or relay.get("textRelayList")
+            or relay.get("relays")
+            or []
+        )
+
+    # 이벤트는 보통 inn 오름차순 + no 오름차순으로 정렬해야 시간순
+    try:
+        items = sorted(items, key=lambda r: (int(r.get("inn") or 0), int(r.get("no") or 0)))
+    except (TypeError, ValueError):
+        pass
+
+    if limit is not None:
+        items = items[-limit:]
+
     out: list[RenderableType] = []
-    for r in items[-limit:]:
+    last_inning_side: tuple[int, str] | None = None
+    for r in items:
         inn = r.get("inn", "-")
         hoa = r.get("homeOrAway")
         side = "초" if str(hoa) == "0" else "말"
-        title = r.get("title") or r.get("textOptionDesc") or ""
-        text = r.get("text") or r.get("textOption") or ""
-        out.append(Text.from_markup(f"[dim]{inn}회{side}[/]  [bold]{title}[/]  {text}"))
+        # 이닝 헤더 ("3회말 삼성 공격" 같은 statusCode=0)는 진하게
+        title = r.get("title") or ""
+        style_code = str(r.get("titleStyle") or r.get("type") or "")
+        # textOptions[0].text에 실제 결과 텍스트가 들어가는 경우가 있음
+        text = ""
+        topts = r.get("textOptions") or []
+        if topts and isinstance(topts, list):
+            text = topts[0].get("text") or topts[0].get("textOptionDesc") or ""
+            # title과 동일하면 생략
+            if text.strip() == title.strip():
+                text = ""
+        if style_code == "0":
+            out.append(Text.from_markup(f"\n[bold yellow]▶ {title}[/]"))
+        else:
+            prefix = f"[dim]{inn}회{side}[/]"
+            body = f"[bold]{title}[/]"
+            if text:
+                body += f"  [dim]→[/] {text}"
+            out.append(Text.from_markup(f"  {prefix}  {body}"))
+        last_inning_side = (int(inn) if str(inn).isdigit() else 0, side)
     if not out:
         out.append(Text.from_markup("[dim](문자중계 데이터 없음)[/]"))
     return Group(*out)

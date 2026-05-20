@@ -2,9 +2,11 @@
 
 명령 일람:
   kbo today                       오늘의 경기 일정/결과
-  kbo schedule [날짜]             특정 날짜 (YYYY-MM-DD) 일정
+  kbo yesterday                   어제 경기 결과
+  kbo schedule [날짜]             특정 날짜 (YYYY-MM-DD / yesterday / -N) 일정
   kbo standings                   팀 순위표
   kbo game <gameId>               경기 박스스코어 + 결승타 + 라인업
+  kbo replay <gameId>             과거 경기 전체 리플레이 (스코어 + 박스 + 문자중계)
   kbo team <팀코드>               팀 정보 + 응원가
   kbo live <gameId>               실시간 중계 (Textual TUI)
 """
@@ -12,7 +14,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import typer
@@ -44,8 +47,27 @@ console = Console()
 
 
 def _parse_date(s: str | None) -> date:
+    """YYYY-MM-DD, yesterday/어제/오늘/today, ±N(일), N일전 등 지원."""
     if not s:
         return now_kst_date()
+    s = s.strip().lower()
+    today = now_kst_date()
+    if s in {"today", "오늘"}:
+        return today
+    if s in {"yesterday", "어제"}:
+        return today - timedelta(days=1)
+    if s in {"tomorrow", "내일"}:
+        return today + timedelta(days=1)
+    # -3 / +2 / 3일전 / 5일후
+    m = re.fullmatch(r"([+-]?\d+)(?:일?(전|후|ago)?)?", s)
+    if m:
+        n = int(m.group(1))
+        suf = m.group(2)
+        if suf in {"전", "ago"}:
+            n = -abs(n)
+        elif suf == "후":
+            n = abs(n)
+        return today + timedelta(days=n)
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
@@ -59,6 +81,17 @@ def today() -> None:
         async with KBOClient() as c:
             games = await c.schedule(now_kst_date())
         console.print(schedule_table(games, title=f"오늘의 KBO 경기 ({now_kst_date()})"))
+
+    _run(_go())
+
+
+@app.command("yesterday", help="어제 경기 결과")
+def yesterday() -> None:
+    d = now_kst_date() - timedelta(days=1)
+    async def _go() -> None:
+        async with KBOClient() as c:
+            games = await c.schedule(d)
+        console.print(schedule_table(games, title=f"어제 KBO 경기 결과 ({d})"))
 
     _run(_go())
 
@@ -143,6 +176,71 @@ def team_cmd(
     from rich.columns import Columns
     panels = [team_info_panel(code) for code in TEAMS]
     console.print(Columns(panels, expand=True))
+
+
+@app.command("replay", help="과거 경기 전체 리플레이 (스코어 + 박스 + 문자중계 전 이닝)")
+def replay(
+    game_id: str = typer.Argument(..., help="네이버 게임 ID (지난 경기)"),
+    max_innings: int = typer.Option(12, "--max-innings", "-i", help="최대 조회 이닝 (연장 대비)"),
+) -> None:
+    async def _go() -> None:
+        async with KBOClient() as c:
+            try:
+                rec = await c.record(game_id)
+            except Exception as e:
+                console.print(f"[red]record 조회 실패: {e}[/]")
+                return
+            current_inn = int(rec.get("currentInning") or 9)
+            innings_to_fetch = min(max_innings, max(current_inn, 9))
+
+            # 모든 이닝의 relay를 동시 요청
+            relay_tasks = [c.relay(game_id, inning=i) for i in range(1, innings_to_fetch + 1)]
+            relays = await asyncio.gather(*relay_tasks, return_exceptions=True)
+
+            # 최신 이닝 relay (스코어보드용)
+            latest_relay = next(
+                (r for r in reversed(relays) if isinstance(r, dict) and r.get("textRelays")),
+                {},
+            )
+            try:
+                sched = await c.schedule(_game_date(game_id))
+                g = next((x for x in sched if x.game_id == game_id), None)
+            except Exception:
+                g = None
+
+        if g:
+            console.print(scoreboard(g, latest_relay))
+
+        etc = rec.get("etcRecords") or []
+        if etc:
+            lines = [f"[dim]{e.get('how', '')}:[/] {e.get('result', '')}" for e in etc[:8]]
+            console.print(Panel("\n".join(lines), title="주요 기록", border_style="cyan"))
+
+        # 박스스코어 (요약)
+        console.print(batter_table(rec, "away"))
+        console.print(pitcher_table(rec, "away"))
+        console.print(batter_table(rec, "home"))
+        console.print(pitcher_table(rec, "home"))
+
+        # 전체 문자중계 — 이닝별 모아서 시간순 정렬
+        all_events: list[dict] = []
+        for r in relays:
+            if isinstance(r, dict):
+                all_events.extend(r.get("textRelays", []) or [])
+        # 중복 제거 (no 기준)
+        seen: set = set()
+        dedup: list[dict] = []
+        for e in all_events:
+            key = (e.get("inn"), e.get("no"))
+            if key in seen:
+                continue
+            seen.add(key)
+            dedup.append(e)
+
+        console.print(Panel(text_relay_lines(dedup, limit=None),
+                            title="문자중계 (전체)", border_style="yellow"))
+
+    _run(_go())
 
 
 @app.command("live", help="실시간 중계 (Textual TUI)")
