@@ -28,6 +28,26 @@ kbo live <gameId>        # 실시간 중계 TUI (Textual)
 kbo schedule 2026-05-19
 ```
 
+### 경기 시작 30분 전 자동 알림
+
+선호 팀 경기가 시작 30분 안으로 들어오면 OS native 알림이 뜹니다.
+
+```bash
+kbo notify test         # 알림 권한 확인용 테스트 발송
+kbo notify install      # 백그라운드 자동 알림 설치 (macOS launchd)
+kbo notify status       # 설치 상태 확인
+kbo notify check        # 지금 한 번만 체크 (스케줄러가 호출하는 명령)
+kbo notify run          # 포그라운드 워처 (Ctrl+C로 종료)
+kbo notify uninstall    # 자동 알림 제거
+
+# 옵션
+kbo notify install --interval 60   # 1분마다 체크 (기본 300초)
+kbo notify install --all           # 선호 팀 외 전체 경기 알림
+kbo notify check --lead 60         # 60분 전부터 알림
+```
+
+처음 실행 시 macOS 시스템 환경설정 → 알림 → 스크립트 편집기(또는 터미널 앱)에서 알림 권한을 허용해야 합니다. 이미 푸시된 알림은 `~/.cache/kbo-cli/notified.json`에 기록되어 중복 발송을 막습니다.
+
 ### 로컬 개발
 
 ```bash

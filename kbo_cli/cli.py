@@ -272,6 +272,125 @@ def live(game_id: str = typer.Argument(..., help="네이버 게임 ID")) -> None
     LiveBroadcastApp(game_id).run()
 
 
+notify_app = typer.Typer(help="경기 시작 알림 (선호 팀 30분 전 자동 알림)")
+app.add_typer(notify_app, name="notify")
+
+
+@notify_app.command("check", help="지금 임박한 경기를 확인하고 알림 발송 (스케줄러가 호출)")
+def notify_check(
+    lead: int = typer.Option(30, "--lead", "-l", help="시작 N분 전부터 알림"),
+    all_games: bool = typer.Option(False, "--all", help="선호 팀 외 전체 경기도 알림"),
+) -> None:
+    from . import notify as N
+    cfg = Config.load()
+    fav = None if all_games else cfg.favorite_team
+
+    async def _go():
+        async with KBOClient() as c:
+            return await c.schedule(now_kst_date())
+
+    games = _run(_go())
+    upcoming = N.find_upcoming(games, lead_minutes=lead, favorite=fav)
+
+    sent = 0
+    for ug in upcoming:
+        if N.already_notified(ug.game.game_id):
+            continue
+        title, body = N.format_message(ug)
+        if N.send_notification(title, body):
+            N.mark_notified(ug.game.game_id)
+            sent += 1
+            console.print(f"[green]🔔 {title}[/]  {body}")
+    if not sent:
+        console.print(f"[dim]임박 경기 없음 (lead={lead}분, favorite={fav or '전체'})[/]")
+
+
+@notify_app.command("test", help="테스트 알림 한 번 발송")
+def notify_test() -> None:
+    from . import notify as N
+    ok = N.send_notification("⚾ KBO 알림 테스트", "이 메시지가 보이면 알림 설정 정상입니다.")
+    if ok:
+        console.print("[green]✓ 알림 전송 성공[/]")
+    else:
+        console.print("[red]✗ 알림 전송 실패 — 시스템 알림 권한을 확인하세요.[/]")
+
+
+@notify_app.command("install", help="백그라운드 자동 알림 설치 (macOS launchd)")
+def notify_install(
+    interval: int = typer.Option(300, "--interval", "-i", help="체크 주기(초). 기본 5분"),
+    all_games: bool = typer.Option(False, "--all", help="선호 팀 외 전체 경기도 알림"),
+) -> None:
+    from . import notify as N
+    import platform
+    if platform.system() != "Darwin":
+        console.print("[yellow]자동 설치는 현재 macOS만 지원합니다.[/]")
+        console.print("[dim]Linux는 cron 또는 systemd timer로 'kbo notify check'를 주기적으로 실행하세요.[/]")
+        return
+    try:
+        p = N.install_launchd(interval_seconds=interval, all_games=all_games)
+    except Exception as e:
+        console.print(f"[red]설치 실패: {e}[/]")
+        return
+    cfg = Config.load()
+    target = "전체 KBO 경기" if all_games else f"{cfg.favorite_team or '선호 팀'}"
+    console.print(Panel(
+        Text.from_markup(
+            f"[bold green]✓ 자동 알림 설치 완료[/]\n\n"
+            f"매 {interval}초마다 임박한 [bold]{target}[/]을 확인해\n"
+            f"시작 30분 이내 경기에 대해 알림을 보냅니다.\n\n"
+            f"[dim]plist:[/] {p}\n"
+            f"[dim]로그:[/] ~/.cache/kbo-cli/notify.out.log"
+        ),
+        border_style="green",
+    ))
+
+
+@notify_app.command("uninstall", help="백그라운드 자동 알림 제거")
+def notify_uninstall() -> None:
+    from . import notify as N
+    ok = N.uninstall_launchd()
+    if ok:
+        console.print("[green]✓ 자동 알림 제거 완료[/]")
+    else:
+        console.print("[yellow]설치된 알림이 없거나 이미 제거됨.[/]")
+
+
+@notify_app.command("status", help="자동 알림 상태 확인")
+def notify_status() -> None:
+    from . import notify as N
+    s = N.launchd_status()
+    if not s.get("installed"):
+        console.print(f"[yellow]자동 알림 미설치.[/] [dim]플랫폼: {s.get('platform', 'macOS')}[/]")
+        console.print("  설치: [bold]kbo notify install[/]")
+        return
+    color = "green" if s.get("loaded") else "yellow"
+    console.print(Panel(
+        Text.from_markup(
+            f"[bold {color}]자동 알림: {'활성' if s.get('loaded') else '플리스트만 존재'}[/]\n"
+            f"[dim]plist:[/] {s.get('plist')}\n"
+            f"[dim]detail:[/] {s.get('detail', '')}"
+        ),
+        border_style=color,
+    ))
+
+
+@notify_app.command("run", help="포그라운드 워처: 1분마다 체크 (Ctrl+C로 종료)")
+def notify_run(
+    lead: int = typer.Option(30, "--lead", "-l"),
+    all_games: bool = typer.Option(False, "--all"),
+    interval: int = typer.Option(60, "--interval", "-i", help="체크 주기(초)"),
+) -> None:
+    import time
+    console.print(f"[bold]🔔 KBO 알림 워처 시작[/]  lead={lead}분  interval={interval}s")
+    console.print("[dim]Ctrl+C로 종료[/]\n")
+    try:
+        while True:
+            notify_check(lead=lead, all_games=all_games)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[dim]워처 종료[/]")
+
+
 @app.command("setup", help="초기 설정 - 선호 팀 등록")
 def setup() -> None:
     _run_setup_wizard()
