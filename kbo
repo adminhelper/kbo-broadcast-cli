@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# KBO CLI wrapper: 매번 sync 없이 즉시 실행 + UF_HIDDEN 우회.
+#
+# uv가 macOS 상에서 .venv/ 내부 파일에 UF_HIDDEN 플래그를 붙여 Python 3.11+
+# site.py가 .pth 파일을 건너뛰는 문제가 있어, 한 번 chflags 한 뒤 --no-sync 로 실행한다.
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PTH_DIR="$HERE/.venv/lib/python3.11/site-packages"
+
+if [[ -d "$PTH_DIR" ]]; then
+    # 베스트-에포트로 hidden 플래그 해제 (실패해도 무시)
+    chflags nohidden "$PTH_DIR"/*.pth 2>/dev/null || true
+fi
+
+exec uv run --no-sync python -m kbo_cli "$@"
