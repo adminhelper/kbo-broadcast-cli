@@ -20,6 +20,9 @@ env/
 # uv
 # uv.lock is committed for reproducibility
 
+# Build artifacts
+dist/
+
 # IDE / editors
 .vscode/
 .idea/
