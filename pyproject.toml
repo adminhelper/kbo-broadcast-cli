@@ -1,0 +1,30 @@
+[project]
+name = "kbo-cli"
+version = "0.1.0"
+description = "KBO 야구 중계 CLI - 실시간 스코어, 문자중계, 순위, 선수정보"
+readme = "README.md"
+authors = [
+    { name = "adminhelper", email = "201401339hs@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "httpx>=0.28.1",
+    "lxml>=6.1.1",
+    "pydantic>=2.13.4",
+    "rich>=15.0.0",
+    "textual>=8.2.7",
+    "typer>=0.25.1",
+]
+
+[project.scripts]
+kbo = "kbo_cli.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kbo_cli*"]
+
