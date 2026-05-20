@@ -2,22 +2,46 @@
 
 KBO 야구를 터미널에서 보는 CLI. 실시간 스코어, 문자중계, 박스스코어, 팀 순위, 응원가까지.
 
-## 빠른 시작
+## 설치
+
+`Python 3.11+` 만 있으면 됩니다.
 
 ```bash
-uv sync                  # 의존성 설치
-./kbo --help             # 도움말
-./kbo today              # 오늘의 경기
-./kbo standings          # 팀 순위
-./kbo game <gameId>      # 박스스코어 + 결승타 + 라인업
-./kbo team HT            # 팀 정보 + 응원가
-./kbo live <gameId>      # 실시간 중계 TUI (Textual)
-./kbo schedule 2026-05-19
+# uv 사용자 (권장)
+uv tool install git+https://github.com/adminhelper/kbo-broadcast-cli.git
+
+# pipx 사용자
+pipx install git+https://github.com/adminhelper/kbo-broadcast-cli.git
+```
+
+설치 후엔 어떤 터미널에서든 `kbo` 명령으로 바로 사용 가능합니다 — Claude Code, Codex, OMC, iTerm/zsh, VS Code 통합 터미널 어디든 OK.
+
+## 사용법
+
+```bash
+kbo --help               # 도움말
+kbo today                # 오늘의 경기
+kbo standings            # 팀 순위
+kbo game <gameId>        # 박스스코어 + 결승타 + 라인업
+kbo team KIA             # 팀 정보 + 응원가
+kbo live <gameId>        # 실시간 중계 TUI (Textual)
+kbo schedule 2026-05-19
+```
+
+### 로컬 개발
+
+```bash
+git clone https://github.com/adminhelper/kbo-broadcast-cli.git
+cd kbo-broadcast-cli
+uv sync
+./kbo today              # 래퍼 스크립트 (macOS .venv UF_HIDDEN 우회)
 ```
 
 `gameId`는 `./kbo today` 결과의 마지막 열에서 확인 가능 (예: `20260519SKWO02026`).
 
-팀 코드: `HT`(KIA) `SS`(삼성) `LG` `OB`(두산) `SK`(SSG) `LT`(롯데) `KT` `WO`(키움) `HH`(한화) `NC`.
+팀 코드: `KIA` `SS`(삼성) `LG` `OB`(두산) `SSG` `LT`(롯데) `KT` `WO`(키움) `HH`(한화) `NC`.
+
+> 네이버 API가 보내는 내부 코드(`HT`, `SK`)도 자동으로 `KIA`/`SSG`로 매핑됩니다.
 
 ## 데이터 소스
 
