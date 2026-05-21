@@ -69,7 +69,15 @@ kbo live --here SSG   # 현재 터미널에서 (새 창 X)
 - macOS: iTerm 또는 Terminal.app 새 창 (화면 오른쪽 배치)
 - Linux: 설치된 터미널 에뮬레이터 (gnome-terminal/konsole/xterm 등)
 
-라이브 창 단축키: `q` 종료, `r` 즉시 새로고침 (자동 5초 폴링).
+라이브 화면 구성 (네이버 라이브 페이지를 차용):
+
+- `SCORE` (좌상단) — 양 팀 점수, 이닝, B/S/O 점 표시, 현재 투수와 투구수
+- `FIELD` (중앙) — 수비 9포지션 이름 배치 + ◆/◇ 주자 다이아몬드 + 배터리(투수/포수) + ▶ 현재 타자
+- `ON DECK` (우상단) — 다음 3타자 + 양팀 시즌 평균 타율
+- `PITCHER CARD` / `BATTER CARD` (가운데 행) — 시즌 ERA·AVG + 오늘 기록 + 상대 전적
+- `RELAY` (하단) — 문자중계 스트림
+
+단축키: `q` 종료, `r` 즉시 새로고침. relay 기본 2초, schedule/박스스코어 60초 주기로 백그라운드 폴링하고 UI 는 0.5초마다 캐시를 다시 그린다. `--poll 1` 로 더 빠르게 (네이버 부하 증가), `--meta-poll 30` 으로 박스스코어를 더 자주 갱신할 수 있다.
 
 ### 3. 알림 설치 (macOS)
 
@@ -109,6 +117,7 @@ Linux/Windows는 자동 등록이 없으니 cron, systemd timer, 작업 스케�
 | `kbo schedule [날짜]` | 특정 날짜 일정 — `2026-05-19`, `어제`, `3일전`, `내일` 등 |
 | `kbo standings` | 팀 순위표 (선호 팀 강조) |
 | `kbo team [코드]` | 팀 정보 + 응원 구호 (코드 생략 시 10팀 전체) |
+| `kbo player <이름\|pcode>` | 선수 정보 + 사진 (iTerm2/WezTerm 인라인, chafa 폴백) |
 | `kbo game <gameId>` | 박스스코어, 결승타, 라인업 |
 | `kbo replay <gameId>` | 과거 경기 풀 리플레이 (박스 + 문자중계 전 이닝) |
 | `kbo live [질의]` | 실시간 중계 TUI (새 창에서 실행) |
