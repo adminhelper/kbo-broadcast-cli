@@ -150,17 +150,22 @@ def scoreboard(game: Game, relay: dict[str, Any] | None = None) -> Panel:
     tbl.add_row(*_row(f"{away_name} ▲", away_innings, game.away_team_score or 0, True))
     tbl.add_row(*_row(f"{home_name} ▼", home_innings, game.home_team_score or 0, False))
 
-    # 현재 상황 (이닝, 카운트, 주자)
+    # 현재 상황 (이닝, 카운트, 주자) — relay.currentGameState 에서 추출
     status_lines: list[RenderableType] = [tbl]
     if relay:
         inn = relay.get("inn")
         hoa = relay.get("homeOrAway")
-        offense = "초" if str(hoa) == "0" else "말"  # 0=away=초, 1=home=말 (네이버 관례)
-        base = relay.get("baseInfo") or {}
-        bases = base.get("bases") or [False, False, False]
-        out = base.get("out", "-")
-        ball = base.get("ball", "-")
-        strike = base.get("strike", "-")
+        offense = "초" if str(hoa) == "0" else "말"  # 0=away=초, 1=home=말
+        cgs = relay.get("currentGameState") or {}
+        # base1/base2/base3 는 문자열로 들어오는데 "0"이면 빈루, 아니면 주자(pcode 등)
+        bases = [
+            str(cgs.get("base1", "0")) not in {"0", "", "None"},
+            str(cgs.get("base2", "0")) not in {"0", "", "None"},
+            str(cgs.get("base3", "0")) not in {"0", "", "None"},
+        ]
+        out = cgs.get("out", "-")
+        ball = cgs.get("ball", "-")
+        strike = cgs.get("strike", "-")
         diamond = _diamond(bases)
         line1 = Text.from_markup(
             f"[bold]{inn}회 {offense}[/]   "

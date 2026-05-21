@@ -188,42 +188,57 @@ class LiveBroadcastApp(App):
     # ───────────────────── panels ─────────────────────
 
     def _lineup_panel(self) -> Panel:
-        """좌측: 양팀 타자 라인업 (현재 타자 강조)."""
+        """좌측: 양팀 타자 라인업 (현재 타자 pcode 매칭으로 강조).
+
+        데이터 소스: relay.awayLineup / relay.homeLineup
+          - batOrder, name, posName, pcode
+          - seasonHra (시즌 타율), ab, hit, run, rbi, hr, bb, kk (오늘 기록)
+        """
         relay = self._relay
         hoa = str(relay.get("homeOrAway", "-"))
-        cur_idx = relay.get("homeBatOrder" if hoa == "1" else "awayBatOrder")
-        cur_idx_int = int(cur_idx) if str(cur_idx).isdigit() else 0
+        cgs = relay.get("currentGameState") or {}
+        cur_batter_pcode = str(cgs.get("batter") or "")
         offense_side = "home" if hoa == "1" else "away"
 
-        away_entry = (relay.get("awayEntry") or {}).get("batter") or []
-        home_entry = (relay.get("homeEntry") or {}).get("batter") or []
+        away_batters = (relay.get("awayLineup") or {}).get("batter") or []
+        home_batters = (relay.get("homeLineup") or {}).get("batter") or []
 
         away_code = self._game.away_team_code if self._game else None
         home_code = self._game.home_team_code if self._game else None
 
         groups: list = []
         for side, label, batters, code in [
-            ("away", "원정 (선공)", away_entry, away_code),
-            ("home", "홈 (후공)", home_entry, home_code),
+            ("away", "원정 (선공)", away_batters, away_code),
+            ("home", "홈 (후공)", home_batters, home_code),
         ]:
             t = Table(show_header=False, box=None, padding=(0, 0), expand=True)
-            t.add_column(width=2, no_wrap=True)
-            t.add_column(no_wrap=True)
-            t.add_column(style="dim", no_wrap=True)
-            for i, b in enumerate(batters[:9], start=1):
-                marker = ""
-                style = ""
-                if side == offense_side and i == cur_idx_int:
-                    marker = "▶"
-                    style = "bold yellow"
+            t.add_column(width=2, no_wrap=True)          # 타순/마커
+            t.add_column(no_wrap=True)                   # 이름
+            t.add_column(style="dim", no_wrap=True)      # 시즌 타율
+            t.add_column(style="dim", no_wrap=True)      # 오늘 H-AB
+            for b in batters[:9]:
+                pcode = str(b.get("pcode") or "")
+                is_current = (
+                    side == offense_side
+                    and cur_batter_pcode
+                    and pcode == cur_batter_pcode
+                )
+                order = b.get("batOrder", "-")
+                marker = "▶" if is_current else str(order)
                 name = b.get("name", "-")
-                pos = b.get("pos", "")
-                row = [
-                    f"[{style}]{marker or i}[/]" if marker else f"[dim]{i}[/]",
-                    f"[{style}]{name}[/]" if style else name,
-                    pos,
-                ]
-                t.add_row(*row)
+                avg = b.get("seasonHra")
+                avg_s = f"{avg:.3f}" if isinstance(avg, (int, float)) else (avg or "-")
+                ab = b.get("ab", 0)
+                hit = b.get("hit", 0)
+                today = f"{hit}-{ab}" if ab else "-"
+                if is_current:
+                    t.add_row(
+                        f"[bold yellow]{marker}[/]",
+                        f"[bold yellow]{name}[/]",
+                        avg_s, today,
+                    )
+                else:
+                    t.add_row(f"[dim]{marker}[/]", name, avg_s, today)
             header = Text.from_markup(f"[bold]{colored(code, label)}[/]")
             groups.append(header)
             groups.append(t)
@@ -231,8 +246,8 @@ class LiveBroadcastApp(App):
 
         return Panel(
             Group(*groups),
-            title="[bold bright_blue]라인업[/]",
-            border_style="bright_blue",
+            title="[bold blue]라인업 · 시즌타율 · 오늘 H-AB[/]",
+            border_style="blue",
         )
 
     def _footer_panel(self) -> Panel:
@@ -242,43 +257,57 @@ class LiveBroadcastApp(App):
         offense_label = "선공 (원정)" if hoa == "0" else "후공 (홈)"
         inn = relay.get("inn", "-")
 
-        # 현재 타자
-        batter_name, batter_pcode = "-", None
-        try:
-            entry = relay.get("homeEntry" if hoa == "1" else "awayEntry", {}) or {}
-            batters = entry.get("batter") or []
-            cur_idx = relay.get("homeBatOrder" if hoa == "1" else "awayBatOrder")
-            if cur_idx and batters:
-                idx = int(cur_idx) - 1
-                if 0 <= idx < len(batters):
-                    b = batters[idx]
-                    batter_name = b.get("name", "-")
-                    batter_pcode = b.get("pcode")
-        except (KeyError, IndexError, ValueError, TypeError):
-            pass
+        cgs = relay.get("currentGameState") or {}
+        cur_batter_pcode = str(cgs.get("batter") or "")
+        cur_pitcher_pcode = str(cgs.get("pitcher") or "")
 
-        # 현재 투수 (defense side)
-        pitcher_name = "-"
-        try:
-            defense = "awayEntry" if hoa == "1" else "homeEntry"
-            entry = relay.get(defense, {}) or {}
-            pitchers = entry.get("pitcher") or []
-            if pitchers:
-                pitcher_name = pitchers[-1].get("name", "-")
-        except (KeyError, IndexError, TypeError):
-            pass
+        def _find(pcode: str, role: str, side: str) -> dict:
+            """{home,away}Lineup.{batter,pitcher} 리스트에서 pcode로 매칭."""
+            if not pcode:
+                return {}
+            lineup = relay.get("homeLineup" if side == "home" else "awayLineup", {}) or {}
+            for item in (lineup.get(role) or []):
+                if str(item.get("pcode") or "") == pcode:
+                    return item
+            return {}
+
+        offense_side = "home" if hoa == "1" else "away"
+        defense_side = "away" if hoa == "1" else "home"
+        batter_row = _find(cur_batter_pcode, "batter", offense_side)
+        pitcher_row = _find(cur_pitcher_pcode, "pitcher", defense_side)
+        batter_name = batter_row.get("name", f"#{cur_batter_pcode}" if cur_batter_pcode else "-")
+        pitcher_name = pitcher_row.get("name", f"#{cur_pitcher_pcode}" if cur_pitcher_pcode else "-")
+
+        # 시즌 + 오늘 기록 보조 문자열
+        b_avg = batter_row.get("seasonHra")
+        b_avg_s = f"{b_avg:.3f}" if isinstance(b_avg, (int, float)) else (b_avg or "-")
+        b_today = f"{batter_row.get('hit', 0)}-{batter_row.get('ab', 0)}" if batter_row else ""
+        p_era = pitcher_row.get("seasonEra") or "-"
+        p_inn = pitcher_row.get("inn") or "-"
 
         career = relay.get("pitcherVsBatterCareerStats") or "-"
 
+        # 카운트 한 줄 + 점수
+        ball = cgs.get("ball", "-")
+        strike = cgs.get("strike", "-")
+        out = cgs.get("out", "-")
+        away_score = cgs.get("awayScore", "-")
+        home_score = cgs.get("homeScore", "-")
+
         line1 = Text.from_markup(
-            f"[bold]{inn}회[/]  [yellow]{offense_label}[/]   "
-            f"[dim]투수[/] {pitcher_name}  →  "
-            f"[dim]타자[/] [bold]{batter_name}[/]"
-            f"{f' [dim](pcode {batter_pcode})[/]' if batter_pcode else ''}"
+            f"[bold]{inn}회 {'초' if hoa == '0' else '말'}[/]  "
+            f"[yellow]{offense_label}[/]   "
+            f"[bold]{away_score}[/] : [bold]{home_score}[/]   "
+            f"B [yellow]{ball}[/]  S [red]{strike}[/]  O [white]{out}[/]"
         )
-        line2 = Text.from_markup(f"[dim]상대 전적:[/] {career}")
+        line2 = Text.from_markup(
+            f"[dim]투수[/] [bold]{pitcher_name}[/] [dim](ERA {p_era}, {p_inn}이닝)[/]   →   "
+            f"[dim]타자[/] [bold yellow]{batter_name}[/] "
+            f"[dim](시즌 {b_avg_s}, 오늘 {b_today})[/]"
+        )
         line3 = Text.from_markup(
-            f"[dim]폴링 {self.poll_relay:.1f}s · 메타 {self.poll_meta:.0f}s · "
+            f"[dim]상대 전적:[/] {career}    "
+            f"[dim]폴링 {self.poll_relay:.1f}s · "
             f"[bold]q[/] 종료, [bold]r[/] 즉시 새로고침[/]"
         )
 
