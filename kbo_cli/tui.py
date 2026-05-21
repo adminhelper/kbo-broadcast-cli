@@ -438,22 +438,27 @@ class LiveBroadcastApp(App):
             f"[bold yellow]◆ 주자[/]" if on2 else "")
         row("",   "1루", fielder_name("1루수"),
             f"[bold yellow]◆ 주자[/]" if on1 else "")
-        # 홈 — 투수, 포수+타자 같은 줄
+        # 홈 — 투수, 포수 (타석은 panel 상단으로 이동)
         row("홈",  "투수", fielder_name("투수"))
-        row("",   "포수", fielder_name("포수"),
-            f"[bold yellow]▶ {batter_order}번 {batter_name}[/] [dim](타석)[/]")
+        row("",   "포수", fielder_name("포수"))
 
-        # 작은 다이아몬드 미니맵 (tiny일 때 주자 표시용, 일반 width에서도 표시)
+        # 작은 다이아몬드 미니맵 — 상단으로 끌어올림
         diamond = (
             f"     {runner_text(on2)}\n"
             f"  {runner_text(on3)}     {runner_text(on1)}\n"
             f"     [grey30]◇[/]"
         )
 
+        # ▶ 타석 — panel 최상단 별도 라인 (가장 큰 비중)
+        at_bat_top = Text.from_markup(
+            f"[bold yellow]▶ {batter_order}번 {batter_name}[/]  [dim](타석)[/]"
+        )
+
         body = Group(
-            t,
-            Text(""),
+            Align.center(at_bat_top),
             Align.center(Text.from_markup(diamond)),
+            Text(""),
+            t,
         )
         return Panel(body, title="[bold green]FIELD[/]", border_style="green")
 
