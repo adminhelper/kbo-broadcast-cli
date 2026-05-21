@@ -357,6 +357,14 @@ def live(
         False, "--here",
         help="새 창을 열지 않고 현재 터미널에서 실행 (블로킹).",
     ),
+    poll: float = typer.Option(
+        2.0, "--poll", "-p",
+        help="문자중계/스코어 폴링 주기(초). 작을수록 빠르지만 네이버 부하 증가.",
+    ),
+    meta_poll: float = typer.Option(
+        60.0, "--meta-poll",
+        help="스케줄·박스스코어 폴링 주기(초). 보통 변화가 적어서 길게 둔다.",
+    ),
 ) -> None:
     from .tui import LiveBroadcastApp
     from .data.teams import colored
@@ -385,11 +393,11 @@ def live(
         ))
 
     if here:
-        LiveBroadcastApp(chosen.game_id).run()
+        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll).run()
         return
 
-    # 새 터미널/패널에서 실행
-    mode = L.launch_side_panel(chosen.game_id)
+    # 새 터미널/패널에서 실행 (옵션은 새 프로세스의 CLI에 그대로 넘김)
+    mode = L.launch_side_panel(chosen.game_id, poll=poll, meta_poll=meta_poll)
     msg_map = {
         "tmux": "tmux 오른쪽 패널에서 실행 중입니다. Ctrl+B → O 로 패널 전환.",
         "iterm": "iTerm 새 창에서 실행 중입니다.",
@@ -401,7 +409,7 @@ def live(
     elif mode == "inline":
         console.print(f"[yellow]{msg_map[mode]}[/]")
         # 폴백: 그냥 여기서 실행
-        LiveBroadcastApp(chosen.game_id).run()
+        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll).run()
     else:
         console.print(f"[green]✓ {msg_map[mode]}[/]")
         console.print("[dim]종료는 그 창에서 'q'를 누르세요. 메인 터미널은 계속 사용 가능합니다.[/]")

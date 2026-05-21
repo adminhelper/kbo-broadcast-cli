@@ -33,12 +33,21 @@ def in_tmux() -> bool:
     return bool(os.environ.get("TMUX"))
 
 
-def launch_side_panel(game_id: str) -> str:
+def launch_side_panel(
+    game_id: str,
+    poll: float | None = None,
+    meta_poll: float | None = None,
+) -> str:
     """`kbo live <game_id> --here`를 옆 패널/새 창에서 실행.
 
     실행 방식 이름을 문자열로 반환 ('tmux' / 'iterm' / 'terminal' / 'inline').
     """
-    cmd = f"{_quote(_kbo_bin())} live {_quote(game_id)} --here"
+    parts = [_quote(_kbo_bin()), "live", _quote(game_id), "--here"]
+    if poll is not None:
+        parts += ["--poll", str(poll)]
+    if meta_poll is not None:
+        parts += ["--meta-poll", str(meta_poll)]
+    cmd = " ".join(parts)
 
     # 1) tmux 세션 안이면 split-window
     if in_tmux() and shutil.which("tmux"):
