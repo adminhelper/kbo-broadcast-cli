@@ -184,14 +184,7 @@ class LiveBroadcastApp(App):
                 hoa = str(data.get("homeOrAway", "-"))
                 half = "초" if hoa == "0" else "말"
 
-                # ─ 공수 교대 감지 → 새 공격 측 TTS 응원가 ─
-                if self._last_inn_half is not None and self.sound:
-                    if (inn, half) != self._last_inn_half:
-                        offense_code = (self._game.home_team_code if hoa == "1"
-                                          else self._game.away_team_code) if self._game else None
-                        if offense_code:
-                            from . import sound as S
-                            S.play_for_team(offense_code)
+                # 공수 교대 감지는 보존 (UI 로직용). TTS 자동 재생은 비활성화.
                 self._last_inn_half = (inn, half)
 
                 # ─ 점수 변경 감지 → macOS 알림만 (사운드는 공수 교대 때만) ─
