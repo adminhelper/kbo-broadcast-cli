@@ -128,6 +128,10 @@ class LiveBroadcastApp(App):
         await asyncio.gather(self._fetch_relay(), self._fetch_meta())
         self._render()
 
+    def on_resize(self, event) -> None:  # type: ignore[override]
+        # 화면 크기 변화 시 다음 _render 에서 반응형 layout 적용
+        self._dirty = True
+
     # ───────────────────── fetch ─────────────────────
 
     async def _fetch_relay(self) -> None:
@@ -168,7 +172,8 @@ class LiveBroadcastApp(App):
             self.query_one("#relay", RelayWidget).update(f"[red]{self._error}[/]")
             return
         self.query_one("#scorebox", ScoreBoxWidget).update(self._scorebox_panel())
-        self.query_one("#field", FieldWidget).update(self._field_panel())
+        field_w = self.query_one("#field", FieldWidget).size.width or 80
+        self.query_one("#field", FieldWidget).update(self._field_panel(width=field_w))
         self.query_one("#ondeck", OnDeckWidget).update(self._ondeck_panel())
         self.query_one("#pitcher-card", PitcherCardWidget).update(self._pitcher_card())
         self.query_one("#batter-card", BatterCardWidget).update(self._batter_card())
@@ -253,22 +258,28 @@ class LiveBroadcastApp(App):
         )
         return Panel(body, title="[bold red]SCORE[/]", border_style="red")
 
-    def _field_panel(self) -> Panel:
-        """중앙: 외야/내야/다이아몬드 통합 필드.
+    def _field_panel(self, width: int = 80) -> Panel:
+        """중앙: 라인업 표 형식의 필드.
 
-        실제 KBO 야구장 배치를 따른다:
-          - 외야 위쪽: 좌익(L) 중견(CF) 우익(R)
-          - 그 아래 유격수 가운데
-          - 그 아래 3루수(좌), 2루수(우-가운데), 1루수(우)
-          - 다이아몬드 베이스 4개는 별도 박스, 주자 있으면 ◆ + 주자 베이스 이름
-          - 배터리(투수→포수) → 타석(▶ 타자)
+        한 행이 하나의 포지션이고, 컬럼은:
+          [구역]  포지션  수비수      |  주자/상태
+            외야   좌익    이형종      |
+            ...
+            내야   3루     김웅빈      |  ◆ 오태곤 (주자)
+            ...
+            홈     포수    김건희      |  ▶ 4번 에레디아 (타석)
+            홈     투수    김재웅      |
+
+        반응형:
+          width >= 60  : 구역 컬럼 포함, 전체 정보
+          40 <= width < 60 : 구역 컬럼 생략, 그 외 그대로
+          width < 40   : 포지션 + 이름만 (주자는 다이아몬드 한 줄 요약)
         """
         relay = self._relay
         cgs = relay.get("currentGameState") or {}
         hoa = str(relay.get("homeOrAway", "-"))
         defense_side = "away" if hoa == "1" else "home"
 
-        # 수비 측 야수 매핑 (포지션 → 이름)
         defense_lineup = (relay.get(f"{defense_side}Lineup") or {}).get("batter") or []
         pos_to_name: dict[str, str] = {}
         for b in defense_lineup:
@@ -288,99 +299,62 @@ class LiveBroadcastApp(App):
         on2 = str(cgs.get("base2", "0")) not in {"0", "", "None"}
         on3 = str(cgs.get("base3", "0")) not in {"0", "", "None"}
 
-        def fielder_cell(pos: str) -> Text:
-            name = pos_to_name.get(pos)
-            short = POS_LABELS.get(pos, pos)
-            if not name:
-                return Text.from_markup(f"[dim]({short})[/]")
-            return Text.from_markup(
-                f"[dim]{short}[/]\n[bold]{name}[/]"
-            )
+        compact = width < 60
+        tiny = width < 40
 
-        # ── ROW 1: 외야 (좌 / 중 / 우) ───────────────────────
-        outfield = Table(show_header=False, box=None, padding=(0, 0), expand=True)
-        outfield.add_column(justify="center")
-        outfield.add_column(justify="center")
-        outfield.add_column(justify="center")
-        outfield.add_row(fielder_cell("좌익수"), fielder_cell("중견수"), fielder_cell("우익수"))
+        def fielder_name(pos: str) -> str:
+            return pos_to_name.get(pos) or "[dim]-[/]"
 
-        # ── ROW 2: 유격수만 가운데 ───────────────────────────
-        ss_row = Table(show_header=False, box=None, padding=(0, 0), expand=True)
-        ss_row.add_column(justify="center")
-        ss_row.add_column(justify="center")
-        ss_row.add_column(justify="center")
-        ss_row.add_row(Text(""), fielder_cell("유격수"), Text(""))
+        def runner_text(on: bool) -> str:
+            return "[bold yellow]◆[/]" if on else "[grey30]◇[/]"
 
-        # ── ROW 3: 다이아몬드 (베이스 + 주자) + 좌우 끝에 3루수 / 1루수 / 2루수 ──
-        # 배치:
-        #   3루수        ◆2루         (2루수 가운데)
-        #   김웅빈                     안치홍
-        #     ◆3루                ◆1루     1루수
-        #                ◆홈              서건창
-        def base_cell(on: bool, label: str) -> Text:
-            sym = "[bold yellow]◆[/]" if on else "[grey50]◇[/]"
-            tag = "[bold yellow]" if on else "[dim]"
-            return Text.from_markup(f"{sym} {tag}{label}[/]")
+        t = Table(show_header=True, box=None, padding=(0, 1),
+                  expand=True, header_style="dim")
+        if not compact:
+            t.add_column("구역", style="dim", no_wrap=True, width=4)
+        t.add_column("포지션", no_wrap=True, width=4)
+        t.add_column("수비", no_wrap=True)
+        if not tiny:
+            t.add_column("주자/상태", no_wrap=True)
 
-        # 다이아몬드 + 수비 그리드 (5 columns)
-        diamond_grid = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        for _ in range(5):
-            diamond_grid.add_column(justify="center")
+        def row(area: str, pos: str, name: str, runner: str = "") -> None:
+            cells = []
+            if not compact:
+                cells.append(area)
+            cells.append(pos)
+            cells.append(name)
+            if not tiny:
+                cells.append(runner)
+            t.add_row(*cells)
 
-        # 2루 (가운데, 2루수와 함께)
-        diamond_grid.add_row(
-            Text(""), Text(""),
-            base_cell(on2, "2루"),
-            fielder_cell("2루수"),
-            Text(""),
-        )
-        # 3루 + 유격수 비어있음 + 1루
-        diamond_grid.add_row(
-            fielder_cell("3루수"),
-            base_cell(on3, "3루"),
-            Text.from_markup("[dim]│[/]"),
-            base_cell(on1, "1루"),
-            fielder_cell("1루수"),
-        )
-        # 홈 + 투수 박스
-        diamond_grid.add_row(
-            Text(""), Text(""),
-            Text.from_markup("[grey50]◇[/] [dim]홈[/]"),
-            Text(""), Text(""),
-        )
+        # 외야
+        row("외야", "좌익", fielder_name("좌익수"))
+        row("",   "중견", fielder_name("중견수"))
+        row("",   "우익", fielder_name("우익수"))
+        # 내야 — 베이스가 있는 포지션은 주자 마커 표시
+        row("내야", "유격", fielder_name("유격수"))
+        row("",   "3루", fielder_name("3루수"),
+            f"{runner_text(on3)} [bold yellow]주자[/]" if on3 else f"{runner_text(on3)} [dim]비어있음[/]")
+        row("",   "2루", fielder_name("2루수"),
+            f"{runner_text(on2)} [bold yellow]주자[/]" if on2 else f"{runner_text(on2)} [dim]비어있음[/]")
+        row("",   "1루", fielder_name("1루수"),
+            f"{runner_text(on1)} [bold yellow]주자[/]" if on1 else f"{runner_text(on1)} [dim]비어있음[/]")
+        # 홈 — 투수, 포수+타자 같은 줄
+        row("홈",  "투수", fielder_name("투수"))
+        row("",   "포수", fielder_name("포수"),
+            f"[bold yellow]▶ {batter_order}번 {batter_name}[/] [dim](타석)[/]")
 
-        # ── ROW 4: 배터리 ───────────────────────────────────
-        battery = Table(show_header=False, box=None, padding=(0, 0), expand=True)
-        battery.add_column(justify="center")
-        battery.add_row(fielder_cell("투수"))
-        battery.add_row(fielder_cell("포수"))
-
-        # ── ROW 5: 현재 타석 ────────────────────────────────
-        at_bat = Text.from_markup(
-            f"[bold yellow]▶ {batter_order}번 {batter_name}[/]  [dim](타석)[/]"
-        )
-
-        # 주자 요약 한 줄
-        runners_on = []
-        if on1: runners_on.append("1루")
-        if on2: runners_on.append("2루")
-        if on3: runners_on.append("3루")
-        runners_line = (
-            f"[dim]주자:[/] [bold yellow]{', '.join(runners_on)}[/]"
-            if runners_on else "[dim]주자 없음[/]"
+        # 작은 다이아몬드 미니맵 (tiny일 때 주자 표시용, 일반 width에서도 표시)
+        diamond = (
+            f"     {runner_text(on2)}\n"
+            f"  {runner_text(on3)}     {runner_text(on1)}\n"
+            f"     [grey30]◇[/]"
         )
 
         body = Group(
-            outfield,
+            t,
             Text(""),
-            ss_row,
-            Text(""),
-            diamond_grid,
-            Align.center(Text.from_markup(runners_line)),
-            Text(""),
-            battery,
-            Text(""),
-            Align.center(at_bat),
+            Align.center(Text.from_markup(diamond)),
         )
         return Panel(body, title="[bold green]FIELD[/]", border_style="green")
 
