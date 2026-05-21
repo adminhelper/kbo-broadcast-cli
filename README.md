@@ -26,6 +26,26 @@ uv가 없다면: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 pipx install git+https://github.com/adminhelper/kbo-broadcast-cli.git
 ```
 
+### 업데이트
+
+새 버전이 나오면 같은 명령에 `--force` 만 붙이면 된다.
+
+```bash
+# uv
+uv tool install --force git+https://github.com/adminhelper/kbo-broadcast-cli.git
+
+# pipx
+pipx install --force git+https://github.com/adminhelper/kbo-broadcast-cli.git
+```
+
+특정 버전으로 고정하려면 끝에 `@v0.3.0` (또는 원하는 태그):
+
+```bash
+uv tool install --force git+https://github.com/adminhelper/kbo-broadcast-cli.git@v0.3.0
+```
+
+변경 내역: [CHANGELOG.md](CHANGELOG.md) · 릴리스 노트: <https://github.com/adminhelper/kbo-broadcast-cli/releases>
+
 ### 소스에서
 
 ```bash

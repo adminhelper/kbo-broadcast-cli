@@ -2,6 +2,35 @@
 
 [Keep a Changelog](https://keepachangelog.com/) 형식 + [Semantic Versioning](https://semver.org/) 을 따른다.
 
+## [0.3.0] - 2026-05-22
+
+### Added
+- `kbo live --demo` — 가짜 1회초~2회말 시뮬 (만루 홈런, 백투백, 3점 홈런 등 13단계, 베이스 ◆/◇ 변화 표시).
+- `kbo cheers` 명령군 — `add` / `list` / `play` / `remove` / `dir` / `init-demo` (macOS `say` TTS 자동 등록) / `add-url` (`yt-dlp` 로 YouTube 음원 추출).
+- `kbo preview <gameId>` — 라이브 패널을 다양한 폭(160/100/60) 에 SVG·텍스트로 저장 (스크린샷 검증용).
+- `kbo live --no-sound` 플래그 — 사운드 자동 재생 비활성.
+- cmux 호환 — `$CMUX_SURFACE_ID` 감지 시 macOS iTerm/Terminal 새 창으로 폴백.
+- 점수 변경 시 macOS native 알림 (`⚾ {팀} N점`).
+- 홈런 감지 — `textRelays` 에 "홈런" 키워드 들어오면 별도 알림 (`💥 {팀} 홈런!`).
+- 응원가 디렉토리 `~/.config/kbo-cli/cheers/{TEAM}.{mp3,m4a,wav,aiff,ogg}` 자동 인식.
+
+### Changed
+- 라이브 TUI 전면 재설계 (네이버 스타일 6 패널):
+  - `SCORE` — 양 팀 R/H/E, 이닝 배지, B/S/O 트래픽 라이트 색상 (초록·노랑·빨강), 현재 투수 + 투구수
+  - `FIELD` — ▶ 타석 + 다이아몬드 미니맵 최상단, 외야/유격/3루/2루/1루/투수/포수 표 배치, 베이스에 주자 들어가면 같은 행에 `◆ 주자` 표시
+  - `ON DECK` — 다음 3타자 + 양팀 시즌 평균 타율
+  - `PITCHER CARD` / `BATTER CARD` — 시즌 + 오늘 기록, 상대 전적
+  - `RELAY` — 문자중계 (min-height 9 확보)
+- `FieldWidget` 반응형 — `render()` override 로 tmux 패널 resize 시 자동 layout 재구성 (60/40 폭 임계로 컬럼 축소).
+- 베이스 상태 표시 — "비어있음" 라벨 제거, 주자 있는 베이스에만 `◆ 주자` 표시.
+- 라이브 데이터 매핑 수정 — `relay.currentGameState` + `relay.{home,away}Lineup` 기준 (이전 잘못 보던 `baseInfo` / `Entry` 키).
+- 폴링 전략 — relay 2초, schedule/박스스코어 60초 분리. UI 는 0.5초마다 캐시 read-only 렌더.
+- 팀 이름 표시 — Naver 내부 코드(`SK`, `HT`) 대신 친숙한 약어(`SSG`, `KIA`) 일관 노출.
+- `kbo live` 인자 해석 — 팀 코드(`SSG`) / 매치업(`ssg-wo`, `ssg vs wo`) / 오늘 일정 번호(`1`~`9`) / 정식 게임 ID 모두 인식.
+
+### Fixed
+- TTS 자동 재생 비활성화 — 사용자 요청에 따라 알림만, 사운드는 `kbo cheers play` 로 명시적 호출.
+
 ## [0.2.0] - 2026-05-21
 
 ### Added

@@ -1,6 +1,6 @@
 [project]
 name = "kbo-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "KBO 야구 중계 CLI - 실시간 스코어, 문자중계, 순위, 박스스코어, 응원가"
 readme = "README.md"
 authors = [
