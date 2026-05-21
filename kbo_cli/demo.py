@@ -143,50 +143,79 @@ def _event(no: int, inn: int, half: str, title: str, text: str = "",
 # ────────────────────── 시퀀스 ──────────────────────
 
 DEMO_SEQUENCE: list[dict[str, Any]] = [
+    # ─── 1회초 SSG 공격 — 주자 누적해보기 ───
     _make_state(inn=1, half="초", away_score=0, home_score=0,
                 batter_idx=0,
                 text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True)]),
+    # 박성한 1루타 → ◆ 1루 ON
     _make_state(inn=1, half="초", away_score=0, home_score=0,
-                ball=1, strike=2, out=1, batter_idx=1,
+                base1=True, out=0, batter_idx=1,
                 text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True),
-                              _event(102, 1, "초", "1번타자 박성한"),
+                              _event(102, 1, "초", "1번타자 박성한", "1루타 ◆"),
                               _event(103, 1, "초", "2번타자 정준재")]),
-    # SSG 1점 (적시타) — score 1:0
-    _make_state(inn=1, half="초", away_score=1, home_score=0,
-                base1=True, out=2, batter_idx=2,
+    # 정준재 2루타 → ◆ 1·2루 ON  (박성한 3루로)
+    _make_state(inn=1, half="초", away_score=0, home_score=0,
+                base2=True, base3=True, out=0, batter_idx=2,
                 text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True),
-                              _event(102, 1, "초", "1번타자 박성한", "안타"),
-                              _event(103, 1, "초", "2번타자 정준재", "1타점 적시타  ※ SSG 1점")]),
-    # 1회말 시작 — KIA 무득점
-    _make_state(inn=1, half="말", away_score=1, home_score=0, out=2, batter_idx=2,
+                              _event(102, 1, "초", "1번타자 박성한", "1루타 ◆"),
+                              _event(103, 1, "초", "2번타자 정준재", "2루타 — 박성한 3루로 ◆◆"),
+                              _event(104, 1, "초", "3번타자 최지훈")]),
+    # 최지훈 적시 2루타 → 2점, ◆ 1·3루 (정준재 홈, 최지훈 3루는 X — 단순화: 1, 3루)
+    _make_state(inn=1, half="초", away_score=2, home_score=0,
+                base1=True, base3=True, out=0, batter_idx=3,
+                text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True),
+                              _event(103, 1, "초", "2번타자 정준재", "2루타"),
+                              _event(105, 1, "초", "3번타자 최지훈", "2타점 적시 2루타  ※ SSG 2점")]),
+    # 에레디아 만루 홈런 시도 시퀀스 — 우선 만루 (사구로 1루 채워서 만루)
+    _make_state(inn=1, half="초", away_score=2, home_score=0,
+                base1=True, base2=True, base3=True,
+                ball=4, out=0, batter_idx=4,
+                text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True),
+                              _event(106, 1, "초", "4번타자 에레디아", "볼넷 — 만루 ◆◆◆"),
+                              _event(107, 1, "초", "5번타자 김재환")]),
+    # 김재환 만루 홈런 → +4점 = 6:0, 베이스 모두 비움
+    _make_state(inn=1, half="초", away_score=6, home_score=0,
+                out=0, batter_idx=5,
+                text_relays=[_event(101, 1, "초", "1회초 SSG 공격", is_header=True),
+                              _event(108, 1, "초", "5번타자 김재환", "만루 홈런!! 💥💥💥💥  ※ SSG +4점"),
+                              _event(109, 1, "초", "6번타자 안상현")]),
+    # 1회말 KIA 공격 — 무득점
+    _make_state(inn=1, half="말", away_score=6, home_score=0,
+                out=2, batter_idx=2,
                 text_relays=[_event(110, 1, "말", "1회말 KIA 공격", is_header=True),
-                              _event(111, 1, "말", "1번타자 김도영"),
-                              _event(112, 1, "말", "2번타자 구자욱"),
-                              _event(113, 1, "말", "3번타자 최형우")]),
-    # 2회초 시작
-    _make_state(inn=2, half="초", away_score=1, home_score=0, batter_idx=3,
+                              _event(111, 1, "말", "1번타자 김도영", "범타"),
+                              _event(112, 1, "말", "2번타자 구자욱", "삼진"),
+                              _event(113, 1, "말", "3번타자 최형우", "범타")]),
+    # 2회초 SSG 솔로 홈런 — 7:0
+    _make_state(inn=2, half="초", away_score=7, home_score=0,
+                batter_idx=6,
                 text_relays=[_event(120, 2, "초", "2회초 SSG 공격", is_header=True),
-                              _event(121, 2, "초", "4번타자 에레디아")]),
-    # 2회초 SSG 솔로 홈런 → score 2:0
-    _make_state(inn=2, half="초", away_score=2, home_score=0, batter_idx=4,
-                text_relays=[_event(120, 2, "초", "2회초 SSG 공격", is_header=True),
-                              _event(122, 2, "초", "4번타자 에레디아", "솔로 홈런!!  💥"),
-                              _event(123, 2, "초", "5번타자 김재환")]),
-    # 2회말 시작 (KIA 공격)
-    _make_state(inn=2, half="말", away_score=2, home_score=0, batter_idx=3,
+                              _event(121, 2, "초", "6번타자 안상현", "솔로 홈런!! 💥"),
+                              _event(122, 2, "초", "7번타자 오태곤")]),
+    # 2회말 KIA 반격 — 김도영 1루타 (◆ 1루)
+    _make_state(inn=2, half="말", away_score=7, home_score=0,
+                base1=True, batter_idx=1,
                 text_relays=[_event(130, 2, "말", "2회말 KIA 공격", is_header=True),
-                              _event(131, 2, "말", "4번타자 디아즈")]),
-    # 2회말 KIA 솔로 홈런 → 2:1
-    _make_state(inn=2, half="말", away_score=2, home_score=1, batter_idx=4,
+                              _event(131, 2, "말", "1번타자 김도영", "1루타 ◆"),
+                              _event(132, 2, "말", "2번타자 구자욱")]),
+    # 구자욱 1루타 → ◆ 1·2루 (김도영 2루)
+    _make_state(inn=2, half="말", away_score=7, home_score=0,
+                base1=True, base2=True, batter_idx=2,
                 text_relays=[_event(130, 2, "말", "2회말 KIA 공격", is_header=True),
-                              _event(132, 2, "말", "4번타자 디아즈", "솔로 홈런!! 💥"),
-                              _event(133, 2, "말", "5번타자 박찬호")]),
-    # 2회말 KIA 추가 솔로 홈런 → 2:2 동점
-    _make_state(inn=2, half="말", away_score=2, home_score=2, batter_idx=5,
+                              _event(132, 2, "말", "2번타자 구자욱", "1루타 — 김도영 2루 ◆◆"),
+                              _event(133, 2, "말", "3번타자 최형우")]),
+    # 최형우 3점 홈런 → 7:3, 베이스 비움
+    _make_state(inn=2, half="말", away_score=7, home_score=3,
+                batter_idx=3,
                 text_relays=[_event(130, 2, "말", "2회말 KIA 공격", is_header=True),
-                              _event(132, 2, "말", "4번타자 디아즈", "솔로 홈런!!"),
-                              _event(134, 2, "말", "5번타자 박찬호", "백투백 솔로 홈런!! 💥"),
-                              _event(135, 2, "말", "6번타자 최원준")]),
+                              _event(134, 2, "말", "3번타자 최형우", "3점 홈런!! 💥💥💥  ※ KIA +3점"),
+                              _event(135, 2, "말", "4번타자 디아즈")]),
+    # 디아즈 백투백 솔로 홈런 → 7:4
+    _make_state(inn=2, half="말", away_score=7, home_score=4,
+                batter_idx=4,
+                text_relays=[_event(130, 2, "말", "2회말 KIA 공격", is_header=True),
+                              _event(136, 2, "말", "4번타자 디아즈", "백투백 솔로 홈런!! 💥"),
+                              _event(137, 2, "말", "5번타자 박찬호")]),
 ]
 
 

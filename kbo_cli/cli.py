@@ -722,6 +722,94 @@ def cheers_add(
     console.print(f"  테스트: [bold]kbo cheers play {canon}[/]")
 
 
+@cheers_app.command("add-url",
+                     help="YouTube URL 에서 음원 추출해 응원가로 등록 (yt-dlp 필요)")
+def cheers_add_url(
+    team_code: str = typer.Argument(..., help="팀 코드"),
+    url: str = typer.Argument(..., help="YouTube URL"),
+    start: float = typer.Option(0.0, "--start", "-s",
+                                 help="시작 초 (앞부분 자르기)"),
+    duration: float = typer.Option(0.0, "--duration", "-d",
+                                    help="잘라낼 길이(초). 0이면 원본 전체"),
+) -> None:
+    """yt-dlp 로 오디오만 추출해서 mp3 로 변환, ffmpeg 로 trim 후 등록.
+
+    저작권 책임은 사용자에게 있습니다. 본인 권리가 있거나 fair use 범위 내에서만
+    사용하세요.
+    """
+    import shutil as _sh
+    import subprocess as _sp
+    import tempfile as _tf
+    from pathlib import Path as _P
+    from .data.teams import normalize as _norm, TEAMS as _TEAMS
+    from . import sound as S
+
+    canon = _norm(team_code)
+    if canon not in _TEAMS:
+        console.print(f"[red]모르는 팀 코드: {team_code}[/]")
+        raise typer.Exit(code=1)
+
+    if not _sh.which("yt-dlp"):
+        console.print("[red]yt-dlp 가 설치되어 있지 않습니다.[/]")
+        console.print("  설치: [bold]brew install yt-dlp[/]   또는   [bold]pipx install yt-dlp[/]")
+        raise typer.Exit(code=1)
+    if not _sh.which("ffmpeg"):
+        console.print("[yellow]ffmpeg 가 없어서 trim/포맷 변환이 안 됩니다.[/]")
+        console.print("  설치: [bold]brew install ffmpeg[/]")
+        raise typer.Exit(code=1)
+
+    with _tf.TemporaryDirectory() as tmp:
+        tmp_dir = _P(tmp)
+        raw_template = str(tmp_dir / "src.%(ext)s")
+        console.print(f"[dim]yt-dlp 로 오디오 추출 중...[/]")
+        try:
+            _sp.run(
+                ["yt-dlp", "-x", "--audio-format", "mp3",
+                 "--no-playlist", "-o", raw_template, url],
+                check=True, capture_output=True, text=True,
+            )
+        except _sp.CalledProcessError as e:
+            console.print(f"[red]yt-dlp 실패:[/] {e.stderr.strip()[:200]}")
+            raise typer.Exit(code=1)
+
+        # 추출된 파일 찾기
+        srcs = sorted(tmp_dir.glob("src.*"))
+        if not srcs:
+            console.print("[red]추출된 파일을 찾지 못했습니다.[/]")
+            raise typer.Exit(code=1)
+        src = srcs[0]
+
+        # trim 필요한 경우
+        if start > 0 or duration > 0:
+            trimmed = tmp_dir / "trimmed.mp3"
+            ff = ["ffmpeg", "-y", "-i", str(src),
+                  "-ss", str(start)]
+            if duration > 0:
+                ff += ["-t", str(duration)]
+            ff += ["-acodec", "libmp3lame", "-q:a", "4", str(trimmed)]
+            try:
+                _sp.run(ff, check=True, capture_output=True, text=True)
+                src = trimmed
+            except _sp.CalledProcessError as e:
+                console.print(f"[red]ffmpeg trim 실패:[/] {e.stderr.strip()[:200]}")
+                raise typer.Exit(code=1)
+
+        # 등록 디렉토리로 복사 — 기존 다른 확장자도 정리
+        d = S.cheer_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        for old_ext in S.CHEER_EXTS:
+            old = d / f"{canon}{old_ext}"
+            if old.exists():
+                old.unlink()
+        dst = d / f"{canon}.mp3"
+        _sh.copy2(src, dst)
+
+    size_kb = dst.stat().st_size / 1024
+    console.print(f"[green]✓ {canon} 응원가 등록 완료[/]   "
+                  f"[dim]{dst}  ({size_kb:.0f} KB)[/]")
+    console.print(f"  테스트: [bold]kbo cheers play {canon}[/]")
+
+
 @cheers_app.command("remove", help="팀 응원가 등록 해제")
 def cheers_remove(team_code: str = typer.Argument(...)) -> None:
     from .data.teams import normalize as _norm
