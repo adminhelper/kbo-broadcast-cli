@@ -369,10 +369,38 @@ def live(
         False, "--no-sound",
         help="점수 났을 때 응원가/알림음을 끈다.",
     ),
+    demo: bool = typer.Option(
+        False, "--demo",
+        help="가짜 데이터로 1회초~2회말 시뮬 (점수·홈런 트리거 확인용)",
+    ),
 ) -> None:
     from .tui import LiveBroadcastApp
     from .data.teams import colored
     from . import launch as L
+
+    if demo:
+        from .demo import demo_game, DEMO_GAME_ID
+        chosen = demo_game()
+        console.print(Text.from_markup(
+            "[bold yellow]DEMO 모드[/]  가짜 SSG vs KIA 시뮬 시작합니다.\n"
+            f"폴링 주기 {poll}s 마다 한 단계씩 진행 — 1회초→1회말→2회초→2회말 (홈런 2개 포함)"
+        ))
+        if here:
+            LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll,
+                              sound=not no_sound, demo=True).run()
+            return
+        mode = L.launch_side_panel(chosen.game_id, poll=poll, meta_poll=meta_poll,
+                                    no_sound=no_sound, demo=True)
+        msg_map = {
+            "tmux": "tmux 오른쪽 패널에서 DEMO 진행 중.",
+            "iterm": "iTerm 새 창에서 DEMO 진행 중.",
+            "terminal": "Terminal 새 창에서 DEMO 진행 중.",
+            "cmux+iterm": "iTerm 새 창에서 DEMO 진행 중 (cmux 감지).",
+            "cmux+terminal": "Terminal 새 창에서 DEMO 진행 중 (cmux 감지).",
+            "inline": "inline DEMO 실행",
+        }
+        console.print(f"[green]✓ {msg_map.get(mode, mode)}[/]")
+        return
 
     # 오늘 일정 로드
     async def _go():
@@ -705,6 +733,52 @@ def cheers_remove(team_code: str = typer.Argument(...)) -> None:
         return
     f.unlink()
     console.print(f"[green]✓ {canon} 응원가 제거 완료[/]")
+
+
+@cheers_app.command("init-demo",
+                     help="(macOS) say 명령으로 10팀 응원 구호 TTS 파일을 자동 생성·등록")
+def cheers_init_demo(
+    force: bool = typer.Option(False, "--force",
+                                help="이미 등록된 팀도 덮어쓴다"),
+) -> None:
+    """저작권 있는 응원가 대신 macOS의 'say' TTS 로 짧은 응원 구호를 만든다.
+
+    사용자가 자기 mp3 가 없어도 '팀별로 다른 음성' 데모를 바로 들을 수 있다."""
+    import platform
+    import subprocess
+    from . import sound as S
+    from .data.teams import TEAMS as _TEAMS
+    from .data.cheer_songs import cheer as _cheer
+
+    if platform.system() != "Darwin":
+        console.print("[yellow]현재 init-demo 는 macOS 의 'say' 명령에 의존합니다.[/]")
+        console.print("[dim]다른 OS 에서는 'kbo cheers add <팀> <파일>' 로 직접 등록하세요.[/]")
+        raise typer.Exit(code=1)
+
+    d = S.cheer_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    created = 0
+    skipped = 0
+    for code in _TEAMS:
+        out = d / f"{code}.aiff"
+        if out.exists() and not force:
+            skipped += 1
+            continue
+        chant = (_cheer(code) or {}).get("famous_chant") or f"{code} 화이팅"
+        try:
+            subprocess.run(
+                ["say", "-r", "180", "-o", str(out), chant],
+                check=True, capture_output=True, timeout=10,
+            )
+            created += 1
+        except subprocess.SubprocessError as e:
+            console.print(f"[red]{code} 생성 실패: {e}[/]")
+    console.print(
+        f"[green]✓ TTS 응원 구호 등록 완료[/]   "
+        f"생성 [bold]{created}[/]개, 건너뜀 [dim]{skipped}[/]개\n"
+        f"[dim]디렉토리: {d}[/]\n"
+        f"테스트: [bold]kbo cheers play KIA[/]"
+    )
 
 
 @cheers_app.command("play", help="등록된 응원가 즉시 재생 (테스트용)")

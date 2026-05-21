@@ -43,6 +43,7 @@ def launch_side_panel(
     poll: float | None = None,
     meta_poll: float | None = None,
     no_sound: bool = False,
+    demo: bool = False,
 ) -> str:
     """`kbo live <game_id> --here`를 옆 패널/새 창에서 실행.
 
@@ -55,6 +56,8 @@ def launch_side_panel(
         parts += ["--meta-poll", str(meta_poll)]
     if no_sound:
         parts += ["--no-sound"]
+    if demo:
+        parts += ["--demo"]
     cmd = " ".join(parts)
 
     # 1) tmux 세션 안이면 split-window

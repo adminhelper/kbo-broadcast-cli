@@ -104,6 +104,7 @@ class LiveBroadcastApp(App):
         poll_meta: float = 60.0,
         render_interval: float = 0.5,
         sound: bool = True,
+        demo: bool = False,
     ) -> None:
         super().__init__()
         self.game_id = game_id
@@ -111,7 +112,8 @@ class LiveBroadcastApp(App):
         self.poll_meta = poll_meta
         self.render_interval = render_interval
         self.sound = sound
-        self.client: KBOClient | None = None
+        self.demo = demo
+        self.client = None  # KBOClient | DemoClient | None
         self._relay: dict[str, Any] = {}
         self._game: Game | None = None
         self._record: dict[str, Any] = {}
@@ -137,8 +139,13 @@ class LiveBroadcastApp(App):
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.client = KBOClient()
-        self.title = f"KBO 라이브 · {self.game_id}"
+        if self.demo:
+            from .demo import DemoClient
+            self.client = DemoClient(step_seconds=self.poll_relay)
+            self.title = f"KBO 라이브 (DEMO) · {self.game_id}"
+        else:
+            self.client = KBOClient()
+            self.title = f"KBO 라이브 · {self.game_id}"
         await self._fetch_meta()
         await self._fetch_relay()
         self._render()
