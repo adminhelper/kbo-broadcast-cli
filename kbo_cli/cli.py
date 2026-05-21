@@ -618,6 +618,110 @@ def player(
         console.print(f"[dim]pcode: {pcode}  (사진만 출력)[/]")
 
 
+cheers_app = typer.Typer(help="응원가 음원 등록/관리 (점수 났을 때 자동 재생)")
+app.add_typer(cheers_app, name="cheers")
+
+
+@cheers_app.command("dir", help="응원가 디렉토리 경로 출력")
+def cheers_dir() -> None:
+    from . import sound as S
+    d = S.cheer_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    console.print(str(d))
+
+
+@cheers_app.command("list", help="현재 등록된 팀 응원가 파일 목록")
+def cheers_list() -> None:
+    from . import sound as S
+    d = S.cheer_dir()
+    if not d.exists():
+        console.print(f"[dim]응원가 디렉토리 없음. 'kbo cheers add'로 추가하세요.[/]")
+        console.print(f"[dim]예상 경로: {d}[/]")
+        return
+    files = sorted(p for p in d.iterdir() if p.suffix.lower() in S.CHEER_EXTS)
+    if not files:
+        console.print(f"[dim]등록된 음원 없음 ({d})[/]")
+        return
+    from rich.table import Table as _T
+    t = _T(title="등록된 응원가", header_style="bold", title_style="bold cyan")
+    t.add_column("팀", justify="center")
+    t.add_column("파일")
+    t.add_column("크기", justify="right", style="dim")
+    for p in files:
+        team_code = p.stem
+        kb = p.stat().st_size / 1024
+        t.add_row(team_code, p.name, f"{kb:.0f} KB")
+    console.print(t)
+
+
+@cheers_app.command("add", help="팀 응원가 등록 — mp3/m4a/wav/aiff/ogg 파일을 복사한다")
+def cheers_add(
+    team_code: str = typer.Argument(..., help="팀 코드 (KIA, SSG, LG, OB, SS, LT, KT, WO, HH, NC)"),
+    path: str = typer.Argument(..., help="등록할 오디오 파일 경로"),
+) -> None:
+    from pathlib import Path as _P
+    import shutil as _sh
+    from .data.teams import normalize as _norm, TEAMS as _TEAMS
+    from . import sound as S
+
+    canon = _norm(team_code)
+    if canon not in _TEAMS:
+        console.print(f"[red]모르는 팀 코드: {team_code}[/]")
+        console.print("[dim]사용 가능한 코드: " + ", ".join(_TEAMS) + "[/]")
+        raise typer.Exit(code=1)
+
+    src = _P(path).expanduser().resolve()
+    if not src.exists() or not src.is_file():
+        console.print(f"[red]파일을 찾을 수 없습니다: {src}[/]")
+        raise typer.Exit(code=1)
+
+    ext = src.suffix.lower()
+    if ext not in S.CHEER_EXTS:
+        console.print(f"[red]지원되지 않는 확장자: {ext}[/]")
+        console.print(f"[dim]지원: {', '.join(S.CHEER_EXTS)}[/]")
+        raise typer.Exit(code=1)
+
+    d = S.cheer_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    # 기존 등록 파일(다른 확장자) 정리
+    for old_ext in S.CHEER_EXTS:
+        old = d / f"{canon}{old_ext}"
+        if old.exists():
+            old.unlink()
+    dst = d / f"{canon}{ext}"
+    _sh.copy2(src, dst)
+    console.print(f"[green]✓ {canon} 응원가 등록 완료[/]  →  [dim]{dst}[/]")
+    console.print(f"  테스트: [bold]kbo cheers play {canon}[/]")
+
+
+@cheers_app.command("remove", help="팀 응원가 등록 해제")
+def cheers_remove(team_code: str = typer.Argument(...)) -> None:
+    from .data.teams import normalize as _norm
+    from . import sound as S
+    canon = _norm(team_code)
+    f = S.cheer_file(canon)
+    if not f:
+        console.print(f"[yellow]{canon} 등록된 음원이 없습니다.[/]")
+        return
+    f.unlink()
+    console.print(f"[green]✓ {canon} 응원가 제거 완료[/]")
+
+
+@cheers_app.command("play", help="등록된 응원가 즉시 재생 (테스트용)")
+def cheers_play(team_code: str = typer.Argument(...)) -> None:
+    from .data.teams import normalize as _norm
+    from . import sound as S
+    canon = _norm(team_code)
+    mode = S.play_for_team(canon)
+    if mode == "cheer":
+        console.print(f"[green]✓ {canon} 응원가 재생 중[/]")
+    elif mode == "default":
+        console.print(f"[yellow]{canon} 응원가 등록 안 됨 — OS 기본음으로 폴백[/]")
+        console.print(f"  등록: [bold]kbo cheers add {canon} <파일경로>[/]")
+    else:
+        console.print("[red]사운드 재생 실패[/]")
+
+
 @app.command("preview", help="라이브 화면 미리보기 (스크린샷용 — 파일 출력)")
 def preview(
     query: Optional[str] = typer.Argument(

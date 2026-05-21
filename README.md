@@ -103,6 +103,20 @@ kbo notify check --lead 60         # 60분 전부터 알림 발송
 
 이미 보낸 알림은 `~/.cache/kbo-cli/notified.json`에 기록되어 중복되지 않는다 (7일 후 자동 정리).
 
+### 응원가 등록 (점수 났을 때 자동 재생)
+
+`kbo live` 가 점수 변경을 감지하면 그 팀 응원가를 자동 재생한다. 음원은 저작권 때문에 동봉하지 않으므로 직접 등록한다.
+
+```bash
+kbo cheers add SSG ~/Downloads/ssg_cheer.mp3   # 등록
+kbo cheers play SSG                            # 등록 확인용 즉시 재생
+kbo cheers list                                # 등록 현황
+kbo cheers remove SSG                          # 제거
+kbo cheers dir                                 # ~/.config/kbo-cli/cheers
+```
+
+지원 포맷: mp3 / m4a / wav / aiff / ogg. 음원이 없는 팀은 OS 기본 알림음으로 폴백한다. `kbo live --no-sound` 로 전부 끌 수 있다.
+
 Linux/Windows는 자동 등록이 없으니 cron, systemd timer, 작업 스케줄러로 `kbo notify check`를 5분 주기 등록한다.
 
 ## 명령 목록
@@ -122,6 +136,8 @@ Linux/Windows는 자동 등록이 없으니 cron, systemd timer, 작업 스케�
 | `kbo replay <gameId>` | 과거 경기 풀 리플레이 (박스 + 문자중계 전 이닝) |
 | `kbo live [질의]` | 실시간 중계 TUI (새 창에서 실행) |
 | `kbo notify ...` | 알림 관련 (`test`, `install`, `status`, `uninstall`, `check`, `run`) |
+| `kbo cheers ...` | 응원가 mp3 등록 (`add`, `list`, `play`, `remove`, `dir`) |
+| `kbo preview <gameId>` | 라이브 패널을 SVG/텍스트로 저장 (반응형 검증용) |
 
 각 명령은 `--help`로 옵션을 확인할 수 있다.
 
