@@ -266,10 +266,147 @@ def replay(
     _run(_go())
 
 
-@app.command("live", help="실시간 중계 (Textual TUI)")
-def live(game_id: str = typer.Argument(..., help="네이버 게임 ID")) -> None:
+def _resolve_game_id(query: str | None, games: list) -> "Game | None":
+    """사용자 입력을 실제 game.game_id로 변환.
+
+    지원하는 형태:
+      - 없음        : 선호 팀의 진행 중 경기 우선
+      - 정식 ID     : 'YYYYMMDD' 시작 (예: 20260521WOSSG02026)
+      - 팀 코드     : 'SSG', 'KIA' (오늘 일정에서 해당 팀 경기)
+      - 매치업      : 'ssg-wo', 'ssg vs wo', 'ssg wo' (두 팀 코드)
+      - 번호        : '1' ~ '9'  (오늘 일정의 N번째 경기)
+    """
+    from .data.teams import normalize
+
+    cfg = Config.load()
+    fav = normalize(cfg.favorite_team) if cfg.favorite_team else ""
+
+    def is_live(g):
+        return g.status_code == "STARTED" and not g.cancel
+    def is_before(g):
+        return g.status_code == "BEFORE" and not g.cancel
+    def is_fav(g):
+        return fav and fav in {normalize(g.home_team_code), normalize(g.away_team_code)}
+
+    # 인자 없음: 선호 팀 진행 → 진행 중 아무거나 → 선호 팀 시작 전 → 첫 시작 전
+    if not query:
+        return (
+            next((g for g in games if is_live(g) and is_fav(g)), None)
+            or next((g for g in games if is_live(g)), None)
+            or next((g for g in games if is_before(g) and is_fav(g)), None)
+            or next((g for g in games if is_before(g)), None)
+        )
+
+    q = query.strip()
+
+    # 정식 game ID (YYYYMMDD로 시작 + 영문)
+    if len(q) >= 12 and q[:8].isdigit():
+        # schedule 결과에 없어도 일단 통과 (다른 날짜)
+        return next((g for g in games if g.game_id == q), _StubGame(q))
+
+    # 번호 (1~9)
+    if q.isdigit() and 1 <= int(q) <= 9:
+        idx = int(q) - 1
+        if idx < len(games):
+            return games[idx]
+        return None
+
+    # 두 팀 매치업 (구분자: '-', ' ', 'vs', 'VS')
+    import re
+    parts = [p for p in re.split(r"[\s\-/]+|vs", q, flags=re.IGNORECASE) if p]
+    parts = [normalize(p) for p in parts]
+    if len(parts) >= 2:
+        a, b = parts[0], parts[1]
+        for g in games:
+            home = normalize(g.home_team_code)
+            away = normalize(g.away_team_code)
+            if {home, away} == {a, b}:
+                return g
+        return None
+
+    # 단일 팀 코드
+    if len(parts) == 1:
+        code = parts[0]
+        candidates = [g for g in games
+                      if code in {normalize(g.home_team_code), normalize(g.away_team_code)}]
+        if not candidates:
+            return None
+        return (
+            next((g for g in candidates if is_live(g)), None)
+            or next((g for g in candidates if is_before(g)), None)
+            or candidates[0]
+        )
+
+    return None
+
+
+class _StubGame:
+    """game_id만 있고 schedule에 없는 경우의 최소 객체."""
+    def __init__(self, gid: str):
+        self.game_id = gid
+        self.home_team_code = self.away_team_code = None
+        self.home_team_name = self.away_team_name = None
+        self.display_status = "?"
+
+
+@app.command("live", help="실시간 중계 — 새 터미널 창(또는 tmux split)에서 옆에 표시")
+def live(
+    query: Optional[str] = typer.Argument(
+        None,
+        help="게임ID / 팀코드(SSG) / 매치업(ssg-wo) / 번호(1~9). 생략 시 선호 팀 진행 경기.",
+    ),
+    here: bool = typer.Option(
+        False, "--here",
+        help="새 창을 열지 않고 현재 터미널에서 실행 (블로킹).",
+    ),
+) -> None:
     from .tui import LiveBroadcastApp
-    LiveBroadcastApp(game_id).run()
+    from .data.teams import colored
+    from . import launch as L
+
+    # 오늘 일정 로드
+    async def _go():
+        async with KBOClient() as c:
+            return await c.schedule(now_kst_date())
+    games = _run(_go())
+
+    chosen = _resolve_game_id(query, games)
+    if not chosen:
+        console.print(f"[red]'{query}'에 해당하는 경기를 찾지 못했습니다.[/]" if query
+                      else "[yellow]진행 중이거나 곧 시작할 KBO 경기가 없습니다.[/]")
+        console.print("[dim]오늘 경기 목록을 보려면: kbo today[/]")
+        console.print("[dim]예시: kbo live SSG  /  kbo live ssg-wo  /  kbo live 1[/]")
+        return
+
+    if getattr(chosen, "home_team_code", None):
+        away = colored(chosen.away_team_code, chosen.away_team_name)
+        home = colored(chosen.home_team_code, chosen.home_team_name)
+        status_label = chosen.display_status
+        console.print(Text.from_markup(
+            f"[dim]선택:[/] {away} vs {home}  [dim]({status_label})  {chosen.game_id}[/]"
+        ))
+
+    if here:
+        LiveBroadcastApp(chosen.game_id).run()
+        return
+
+    # 새 터미널/패널에서 실행
+    mode = L.launch_side_panel(chosen.game_id)
+    msg_map = {
+        "tmux": "tmux 오른쪽 패널에서 실행 중입니다. Ctrl+B → O 로 패널 전환.",
+        "iterm": "iTerm 새 창에서 실행 중입니다.",
+        "terminal": "Terminal 새 창에서 실행 중입니다.",
+        "inline": "새 창 자동 실행 환경이 아닙니다. '--here' 플래그로 현재 터미널에서 실행하세요.",
+    }
+    if mode in {"gnome-terminal", "konsole", "xfce4-terminal", "xterm"}:
+        console.print(f"[green]✓ {mode} 새 창에서 실행 중입니다.[/]")
+    elif mode == "inline":
+        console.print(f"[yellow]{msg_map[mode]}[/]")
+        # 폴백: 그냥 여기서 실행
+        LiveBroadcastApp(chosen.game_id).run()
+    else:
+        console.print(f"[green]✓ {msg_map[mode]}[/]")
+        console.print("[dim]종료는 그 창에서 'q'를 누르세요. 메인 터미널은 계속 사용 가능합니다.[/]")
 
 
 notify_app = typer.Typer(help="경기 시작 알림 (선호 팀 30분 전 자동 알림)")

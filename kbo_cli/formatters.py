@@ -31,7 +31,7 @@ def schedule_table(
     t.add_column("구장", style="dim")
     t.add_column("상태", justify="center")
     t.add_column("중계", style="dim")
-    t.add_column("Game ID", style="dim")
+    t.add_column("Game ID", style="dim", no_wrap=True, overflow="fold")
 
     # 선호 팀 경기가 있으면 맨 위로 정렬
     games_list = list(games)

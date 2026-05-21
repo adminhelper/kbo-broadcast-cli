@@ -187,13 +187,24 @@ kbo game 20260520WOSSG02026
 # 과거 경기 풀 리플레이 (스코어 + 박스 + 문자중계 전체 이닝)
 kbo replay 20260519SKWO02026
 
-# 실시간 중계 TUI (Textual) — 진행 중 경기에서 진가 발휘
-kbo live 20260521WOSSG02026
+# 실시간 중계 TUI — 자동으로 새 터미널/창 옆에 사이드 패널처럼 띄움
+kbo live                # 인자 없으면 선호 팀 진행 경기 자동
+kbo live SSG            # 팀 코드 (오늘 SSG 경기)
+kbo live ssg-wo         # 매치업 (SSG vs 키움)
+kbo live 1              # 오늘 일정의 1번째 경기
+kbo live 20260521WOSSG02026   # 정식 게임 ID도 OK
+kbo live --here SSG     # 새 창 안 열고 현재 터미널에서 실행
 ```
 
-**`kbo live` 단축키**
+**`kbo live` 단축키 (라이브 창 안에서)**
 - `q` — 종료
 - `r` — 즉시 새로고침 (자동 5초 폴링)
+
+**옆에 사이드 패널처럼 뜨는 방식**
+- tmux 세션 안: 오른쪽으로 **split-window** (Ctrl+B → O 로 패널 전환)
+- 일반 macOS 터미널: **iTerm 또는 Terminal.app 새 창** (자동으로 화면 오른쪽 배치)
+- Linux: 설치된 터미널 에뮬레이터(`gnome-terminal` / `konsole` / `xterm`) 새 창
+- 자동 감지 실패 시 `--here`로 현재 터미널에서 실행
 
 ---
 
