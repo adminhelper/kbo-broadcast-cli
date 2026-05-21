@@ -76,17 +76,19 @@ class LiveBroadcastApp(App):
     CSS = """
     Screen { layout: vertical; }
 
-    #top { height: 55%; }
+    #top { height: 50%; }
     #scorebox  { width: 18%; height: 100%; border: round red; padding: 0 1; }
     #field     { width: 54%; height: 100%; border: round green; padding: 1 2; }
     #ondeck    { width: 28%; height: 100%; border: round white; padding: 0 1; }
 
-    #cards { height: 8; }
+    #cards { height: 6; }
     #pitcher-card { width: 50%; height: 100%; border: round cyan; padding: 0 1; }
     #batter-card  { width: 50%; height: 100%; border: round yellow; padding: 0 1; }
 
+    /* 문자중계 — 충분한 높이 확보 (최소 약 7~8줄 + border) */
     #relay {
         height: 1fr;
+        min-height: 9;
         border: round magenta;
         padding: 0 1;
     }
@@ -121,9 +123,11 @@ class LiveBroadcastApp(App):
         self._dirty: bool = True
         # 이전 폭 추적 (반응형 강제 재렌더용)
         self._last_widths: dict[str, int] = {}
-        # 이전 점수 추적 (사운드 트리거용)
+        # 이전 점수 추적 (알림 트리거)
         self._last_score: tuple[str, str] | None = None
-        # 이전 textRelays 의 마지막 이벤트 no — 새 이벤트 중 홈런 감지에 사용
+        # 이전 이닝/공격측 추적 (공수 교대 시 TTS 응원가 트리거)
+        self._last_inn_half: tuple[Any, str] | None = None
+        # 이전 textRelays 의 마지막 이벤트 no — 새 이벤트 중 홈런 감지
         self._last_event_no: int = -1
 
     def compose(self) -> ComposeResult:
@@ -176,18 +180,47 @@ class LiveBroadcastApp(App):
                 cgs = data.get("currentGameState") or {}
                 away_score = str(cgs.get("awayScore", "0"))
                 home_score = str(cgs.get("homeScore", "0"))
+                inn = data.get("inn")
+                hoa = str(data.get("homeOrAway", "-"))
+                half = "초" if hoa == "0" else "말"
 
-                # ─ 점수 변경 감지 → 응원가 ─
-                if self._last_score is not None and self.sound:
+                # ─ 공수 교대 감지 → 새 공격 측 TTS 응원가 ─
+                if self._last_inn_half is not None and self.sound:
+                    if (inn, half) != self._last_inn_half:
+                        offense_code = (self._game.home_team_code if hoa == "1"
+                                          else self._game.away_team_code) if self._game else None
+                        if offense_code:
+                            from . import sound as S
+                            S.play_for_team(offense_code)
+                self._last_inn_half = (inn, half)
+
+                # ─ 점수 변경 감지 → macOS 알림만 (사운드는 공수 교대 때만) ─
+                if self._last_score is not None:
                     prev_a, prev_h = self._last_score
-                    scored_team = None
+                    scored_team_code = None
+                    diff = 0
                     if away_score != prev_a:
-                        scored_team = self._game.away_team_code if self._game else None
+                        scored_team_code = self._game.away_team_code if self._game else None
+                        try:
+                            diff = int(away_score) - int(prev_a)
+                        except ValueError:
+                            diff = 0
                     elif home_score != prev_h:
-                        scored_team = self._game.home_team_code if self._game else None
-                    if scored_team:
-                        from . import sound as S
-                        S.play_for_team(scored_team)
+                        scored_team_code = self._game.home_team_code if self._game else None
+                        try:
+                            diff = int(home_score) - int(prev_h)
+                        except ValueError:
+                            diff = 0
+                    if scored_team_code:
+                        try:
+                            from . import notify as N
+                            N.send_notification(
+                                f"⚾ {scored_team_code} {diff}점",
+                                f"{inn}회 {half}  현재 {away_score} : {home_score}",
+                                sound="Glass",
+                            )
+                        except Exception:
+                            pass
                 self._last_score = (away_score, home_score)
 
                 # ─ 새 이벤트 중 홈런 감지 → 별도 알림 ─
@@ -551,7 +584,7 @@ class LiveBroadcastApp(App):
     # ───────────────────── lookup ─────────────────────
 
     def _maybe_homerun(self, new_events: list[dict]) -> None:
-        """새 이벤트 중 '홈런'이 보이면 사운드 + native notification."""
+        """새 이벤트 중 '홈런'이 보이면 native notification 만 (TTS 는 공수 교대 시)."""
         for ev in new_events:
             title = ev.get("title") or ""
             topts = ev.get("textOptions") or []
@@ -559,18 +592,11 @@ class LiveBroadcastApp(App):
             blob = f"{title} {text}"
             if "홈런" not in blob:
                 continue
-            # 홈런 친 측 — 공격 측 (homeOrAway: 1=home, 0=away)
             hoa = str(ev.get("homeOrAway", "-"))
             team_code = None
             if self._game:
                 team_code = (self._game.home_team_code if hoa == "1"
                               else self._game.away_team_code)
-
-            # 사운드: 응원가 (사용자 등록 mp3 우선)
-            if self.sound:
-                from . import sound as S
-                S.play_for_team(team_code)
-            # 알림: macOS 우상단 native
             try:
                 from . import notify as N
                 body = title if title else "홈런!"
@@ -579,7 +605,7 @@ class LiveBroadcastApp(App):
                 N.send_notification(f"💥 {team_code or 'KBO'} 홈런!", body, sound="Hero")
             except Exception:
                 pass
-            break  # 한 tick 에 여러 홈런이 들어와도 한 번만 알림
+            break
 
     def _find_lineup_row(self, pcode: str | None, role: str,
                          defense_side: bool) -> dict:
