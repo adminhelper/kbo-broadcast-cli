@@ -20,13 +20,11 @@ from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
 from .api import KBOClient, now_kst_date
 from .config import Config, config_path
-from .data.cheer_songs import CHEER
 from .data.teams import TEAMS, normalize, team
 from .formatters import (
     batter_table,

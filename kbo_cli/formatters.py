@@ -220,23 +220,20 @@ def text_relay_lines(relay: dict[str, Any] | list[dict], limit: int | None = 20)
         items = items[-limit:]
 
     out: list[RenderableType] = []
-    last_inning_side: tuple[int, str] | None = None
     for r in items:
         inn = r.get("inn", "-")
         hoa = r.get("homeOrAway")
         side = "초" if str(hoa) == "0" else "말"
-        # 이닝 헤더 ("3회말 삼성 공격" 같은 statusCode=0)는 진하게
         title = r.get("title") or ""
-        style_code = str(r.get("titleStyle") or r.get("type") or "")
-        # textOptions[0].text에 실제 결과 텍스트가 들어가는 경우가 있음
+        # statusCode=0 / titleStyle="0" 은 "N회X 팀 공격" 이닝 헤더
+        is_header = str(r.get("titleStyle") or r.get("type") or "") == "0"
         text = ""
         topts = r.get("textOptions") or []
         if topts and isinstance(topts, list):
             text = topts[0].get("text") or topts[0].get("textOptionDesc") or ""
-            # title과 동일하면 생략
             if text.strip() == title.strip():
                 text = ""
-        if style_code == "0":
+        if is_header:
             out.append(Text.from_markup(f"\n[bold yellow]▶ {title}[/]"))
         else:
             prefix = f"[dim]{inn}회{side}[/]"
@@ -244,7 +241,6 @@ def text_relay_lines(relay: dict[str, Any] | list[dict], limit: int | None = 20)
             if text:
                 body += f"  [dim]→[/] {text}"
             out.append(Text.from_markup(f"  {prefix}  {body}"))
-        last_inning_side = (int(inn) if str(inn).isdigit() else 0, side)
     if not out:
         out.append(Text.from_markup("[dim](문자중계 데이터 없음)[/]"))
     return Group(*out)
