@@ -121,6 +121,8 @@ class LiveBroadcastApp(App):
         self._last_widths: dict[str, int] = {}
         # 이전 점수 추적 (사운드 트리거용)
         self._last_score: tuple[str, str] | None = None
+        # 이전 textRelays 의 마지막 이벤트 no — 새 이벤트 중 홈런 감지에 사용
+        self._last_event_no: int = -1
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -164,10 +166,11 @@ class LiveBroadcastApp(App):
         try:
             data = await self.client.relay(self.game_id)
             if data:
-                # 점수 변경 감지 → 사운드
                 cgs = data.get("currentGameState") or {}
                 away_score = str(cgs.get("awayScore", "0"))
                 home_score = str(cgs.get("homeScore", "0"))
+
+                # ─ 점수 변경 감지 → 응원가 ─
                 if self._last_score is not None and self.sound:
                     prev_a, prev_h = self._last_score
                     scored_team = None
@@ -179,6 +182,20 @@ class LiveBroadcastApp(App):
                         from . import sound as S
                         S.play_for_team(scored_team)
                 self._last_score = (away_score, home_score)
+
+                # ─ 새 이벤트 중 홈런 감지 → 별도 알림 ─
+                events = data.get("textRelays") or []
+                new_events = [
+                    e for e in events
+                    if isinstance(e.get("no"), int) and e["no"] > self._last_event_no
+                ]
+                if events:
+                    self._last_event_no = max(
+                        (e.get("no") for e in events if isinstance(e.get("no"), int)),
+                        default=self._last_event_no,
+                    )
+                if self._last_event_no >= 0:
+                    self._maybe_homerun(new_events)
 
                 self._relay = data
                 self._error = None
@@ -524,6 +541,37 @@ class LiveBroadcastApp(App):
                      title="[bold yellow]현재 타자[/]", border_style="yellow")
 
     # ───────────────────── lookup ─────────────────────
+
+    def _maybe_homerun(self, new_events: list[dict]) -> None:
+        """새 이벤트 중 '홈런'이 보이면 사운드 + native notification."""
+        for ev in new_events:
+            title = ev.get("title") or ""
+            topts = ev.get("textOptions") or []
+            text = topts[0].get("text", "") if topts and isinstance(topts, list) else ""
+            blob = f"{title} {text}"
+            if "홈런" not in blob:
+                continue
+            # 홈런 친 측 — 공격 측 (homeOrAway: 1=home, 0=away)
+            hoa = str(ev.get("homeOrAway", "-"))
+            team_code = None
+            if self._game:
+                team_code = (self._game.home_team_code if hoa == "1"
+                              else self._game.away_team_code)
+
+            # 사운드: 응원가 (사용자 등록 mp3 우선)
+            if self.sound:
+                from . import sound as S
+                S.play_for_team(team_code)
+            # 알림: macOS 우상단 native
+            try:
+                from . import notify as N
+                body = title if title else "홈런!"
+                if text and text != title:
+                    body = f"{title} — {text}"
+                N.send_notification(f"💥 {team_code or 'KBO'} 홈런!", body, sound="Hero")
+            except Exception:
+                pass
+            break  # 한 tick 에 여러 홈런이 들어와도 한 번만 알림
 
     def _find_lineup_row(self, pcode: str | None, role: str,
                          defense_side: bool) -> dict:
