@@ -365,6 +365,10 @@ def live(
         60.0, "--meta-poll",
         help="스케줄·박스스코어 폴링 주기(초). 보통 변화가 적어서 길게 둔다.",
     ),
+    no_sound: bool = typer.Option(
+        False, "--no-sound",
+        help="점수 났을 때 응원가/알림음을 끈다.",
+    ),
 ) -> None:
     from .tui import LiveBroadcastApp
     from .data.teams import colored
@@ -393,23 +397,27 @@ def live(
         ))
 
     if here:
-        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll).run()
+        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll,
+                          sound=not no_sound).run()
         return
 
     # 새 터미널/패널에서 실행 (옵션은 새 프로세스의 CLI에 그대로 넘김)
-    mode = L.launch_side_panel(chosen.game_id, poll=poll, meta_poll=meta_poll)
+    mode = L.launch_side_panel(chosen.game_id, poll=poll, meta_poll=meta_poll,
+                                no_sound=no_sound)
     msg_map = {
         "tmux": "tmux 오른쪽 패널에서 실행 중입니다. Ctrl+B → O 로 패널 전환.",
         "iterm": "iTerm 새 창에서 실행 중입니다.",
         "terminal": "Terminal 새 창에서 실행 중입니다.",
         "inline": "새 창 자동 실행 환경이 아닙니다. '--here' 플래그로 현재 터미널에서 실행하세요.",
     }
-    if mode in {"gnome-terminal", "konsole", "xfce4-terminal", "xterm"}:
+    if mode in {"gnome-terminal", "konsole", "xfce4-terminal", "xterm",
+                "cmux+iterm", "cmux+terminal"}:
         console.print(f"[green]✓ {mode} 새 창에서 실행 중입니다.[/]")
     elif mode == "inline":
         console.print(f"[yellow]{msg_map[mode]}[/]")
         # 폴백: 그냥 여기서 실행
-        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll).run()
+        LiveBroadcastApp(chosen.game_id, poll_relay=poll, poll_meta=meta_poll,
+                          sound=not no_sound).run()
     else:
         console.print(f"[green]✓ {msg_map[mode]}[/]")
         console.print("[dim]종료는 그 창에서 'q'를 누르세요. 메인 터미널은 계속 사용 가능합니다.[/]")
@@ -608,6 +616,76 @@ def player(
         ))
     else:
         console.print(f"[dim]pcode: {pcode}  (사진만 출력)[/]")
+
+
+@app.command("preview", help="라이브 화면 미리보기 (스크린샷용 — 파일 출력)")
+def preview(
+    query: Optional[str] = typer.Argument(
+        None, help="게임 ID 또는 팀코드/매치업/번호. 생략 시 선호 팀 진행 경기."),
+    out: str = typer.Option("/tmp/kbo-live-preview", "--out", "-o",
+                             help="출력 파일 경로 prefix (.{w}.svg / .{w}.txt 가 붙는다)"),
+    widths: str = typer.Option("160,100,60", "--widths",
+                                help="콤마로 구분한 폭 목록. 각 폭마다 svg + txt 생성"),
+) -> None:
+    """라이브 TUI 패널들을 다양한 폭으로 미리 렌더해서 SVG·텍스트로 저장.
+
+    실제 TUI 를 띄우지 않으므로 cron/CI/사용자 검토 용도로 적합."""
+    from rich.console import Console
+    from .tui import LiveBroadcastApp
+    from .data.teams import normalize as _norm
+
+    # query 가 full game ID 형식이면 그 날짜의 일정을 따로 받아서 매칭
+    if query and len(query) >= 12 and query[:8].isdigit():
+        day = datetime.strptime(query[:8], "%Y%m%d").date()
+    else:
+        day = now_kst_date()
+
+    async def _go():
+        async with KBOClient() as c:
+            return await c.schedule(day)
+
+    games = _run(_go())
+    chosen = _resolve_game_id(query, games)
+    if not chosen or not getattr(chosen, "home_team_code", None):
+        console.print(f"[red]적합한 게임이 없습니다 ({day}). 게임 ID 또는 팀코드를 확인하세요.[/]")
+        return
+
+    async def _hydrate():
+        async with KBOClient() as c:
+            relay = await c.relay(chosen.game_id)
+        return relay
+
+    relay = _run(_hydrate())
+    app = LiveBroadcastApp(chosen.game_id)
+    app._relay = relay
+    app._game = chosen
+
+    width_list = [int(w.strip()) for w in widths.split(",") if w.strip()]
+    saved: list[str] = []
+    for w in width_list:
+        rec = Console(width=w, record=True)
+        # 한 화면 안에 모든 패널을 위→아래로 출력
+        rec.print(app._scorebox_panel())
+        rec.print(app._field_panel(width=int(w * 0.5)))  # field 는 중앙 컬럼이라 절반 폭
+        rec.print(app._ondeck_panel())
+        rec.print(app._pitcher_card())
+        rec.print(app._batter_card())
+
+        svg_path = f"{out}.{w}.svg"
+        txt_path = f"{out}.{w}.txt"
+        # export_text 가 record buffer 를 비우지 않도록 SVG 보다 먼저 호출
+        text_dump = rec.export_text(clear=False)
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(text_dump)
+        rec.save_svg(svg_path, title=f"kbo-cli preview (width={w})")
+        saved.append(f"{w:>4}w  →  {svg_path}   |   {txt_path}")
+
+    console.print("[bold green]✓ 미리보기 저장 완료[/]")
+    for line in saved:
+        console.print(f"  {line}")
+    console.print(
+        "\n[dim]SVG 는 브라우저로 열어보세요 (open path.svg). 텍스트는 cat 또는 less.[/]"
+    )
 
 
 @app.command("setup", help="초기 설정 - 선호 팀 등록")
