@@ -47,11 +47,29 @@ POS_LABELS = {
 
 
 class ScoreBoxWidget(Static): pass
-class FieldWidget(Static): pass
 class OnDeckWidget(Static): pass
 class PitcherCardWidget(Static): pass
 class BatterCardWidget(Static): pass
 class RelayWidget(Static): pass
+
+
+class FieldWidget(Static):
+    """필드 패널 — render() 시점에 자체 size.width 기반으로 다시 그린다.
+
+    이렇게 하면 tmux 패널을 리사이즈했을 때 Textual 의 SIGWINCH 처리만으로
+    바로 새 width 에 맞춰 반응형 layout 이 적용된다.
+    """
+
+    def on_resize(self, event) -> None:  # type: ignore[override]
+        self.refresh()
+
+    def render(self):  # type: ignore[override]
+        app = self.app
+        builder = getattr(app, "_field_panel", None)
+        if builder is None:
+            return Text.from_markup("[dim]필드 로딩…[/]")
+        w = self.size.width or 80
+        return builder(width=w)
 
 
 class LiveBroadcastApp(App):
@@ -187,12 +205,6 @@ class LiveBroadcastApp(App):
     # ───────────────────── render ─────────────────────
 
     def _render(self) -> None:
-        # 폭 변화 감지 — 반응형 layout 강제 재렌더
-        field_w = self.query_one("#field", FieldWidget).size.width or 80
-        if self._last_widths.get("field") != field_w:
-            self._last_widths["field"] = field_w
-            self._dirty = True
-
         if not self._dirty:
             return
         self._dirty = False
@@ -201,7 +213,8 @@ class LiveBroadcastApp(App):
             self.query_one("#relay", RelayWidget).update(f"[red]{self._error}[/]")
             return
         self.query_one("#scorebox", ScoreBoxWidget).update(self._scorebox_panel())
-        self.query_one("#field", FieldWidget).update(self._field_panel(width=field_w))
+        # FieldWidget 은 자체 render() 가 size.width 를 보고 그리므로 refresh() 만.
+        self.query_one("#field", FieldWidget).refresh()
         self.query_one("#ondeck", OnDeckWidget).update(self._ondeck_panel())
         self.query_one("#pitcher-card", PitcherCardWidget).update(self._pitcher_card())
         self.query_one("#batter-card", BatterCardWidget).update(self._batter_card())
