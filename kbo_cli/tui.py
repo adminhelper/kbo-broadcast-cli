@@ -297,9 +297,9 @@ class LiveBroadcastApp(App):
         strike = int(cgs.get("strike", 0) or 0)
         out = int(cgs.get("out", 0) or 0)
         bso = (
-            f"{bar('B', ball, 4, 'yellow')}\n"
-            f"{bar('S', strike, 3, 'red')}\n"
-            f"{bar('O', out, 3, 'white')}"
+            f"{bar('B', ball, 4, 'green')}\n"
+            f"{bar('S', strike, 3, 'yellow')}\n"
+            f"{bar('O', out, 3, 'red')}"
         )
 
         # 현재 투수 + 투구수
@@ -398,12 +398,13 @@ class LiveBroadcastApp(App):
         row("",   "우익", fielder_name("우익수"))
         # 내야 — 베이스가 있는 포지션은 주자 마커 표시
         row("내야", "유격", fielder_name("유격수"))
+        # 베이스 행 — 주자 있을 때만 표시, 비어있는 베이스는 공백
         row("",   "3루", fielder_name("3루수"),
-            f"{runner_text(on3)} [bold yellow]주자[/]" if on3 else f"{runner_text(on3)} [dim]비어있음[/]")
+            f"[bold yellow]◆ 주자[/]" if on3 else "")
         row("",   "2루", fielder_name("2루수"),
-            f"{runner_text(on2)} [bold yellow]주자[/]" if on2 else f"{runner_text(on2)} [dim]비어있음[/]")
+            f"[bold yellow]◆ 주자[/]" if on2 else "")
         row("",   "1루", fielder_name("1루수"),
-            f"{runner_text(on1)} [bold yellow]주자[/]" if on1 else f"{runner_text(on1)} [dim]비어있음[/]")
+            f"[bold yellow]◆ 주자[/]" if on1 else "")
         # 홈 — 투수, 포수+타자 같은 줄
         row("홈",  "투수", fielder_name("투수"))
         row("",   "포수", fielder_name("포수"),
