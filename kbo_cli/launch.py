@@ -33,10 +33,16 @@ def in_tmux() -> bool:
     return bool(os.environ.get("TMUX"))
 
 
+def in_cmux() -> bool:
+    """Anthropic cmux 안에서 실행 중인지."""
+    return bool(os.environ.get("CMUX_SURFACE_ID"))
+
+
 def launch_side_panel(
     game_id: str,
     poll: float | None = None,
     meta_poll: float | None = None,
+    no_sound: bool = False,
 ) -> str:
     """`kbo live <game_id> --here`를 옆 패널/새 창에서 실행.
 
@@ -47,6 +53,8 @@ def launch_side_panel(
         parts += ["--poll", str(poll)]
     if meta_poll is not None:
         parts += ["--meta-poll", str(meta_poll)]
+    if no_sound:
+        parts += ["--no-sound"]
     cmd = " ".join(parts)
 
     # 1) tmux 세션 안이면 split-window
@@ -55,7 +63,17 @@ def launch_side_panel(
         subprocess.run(["tmux", "split-window", "-h", "-l", "70%", cmd], check=False)
         return "tmux"
 
+    # 1b) cmux 안: 자체 split이 표준화되어 있지 않아서 새 OS 창 분기로 폴백한다.
+    # cmux 사용자는 보통 macOS 라 iTerm/Terminal 새 창이 자연스럽다.
     sysname = platform.system()
+    if in_cmux():
+        if sysname == "Darwin":
+            if _is_app_running("iTerm") or _has_app_bundle("iTerm"):
+                _launch_iterm(cmd)
+                return "cmux+iterm"
+            _launch_terminal_app(cmd)
+            return "cmux+terminal"
+        # 그 외 OS 는 아래 일반 흐름으로 떨어진다
     if sysname == "Darwin":
         # 2) iTerm 우선
         if _is_app_running("iTerm") or _has_app_bundle("iTerm"):
