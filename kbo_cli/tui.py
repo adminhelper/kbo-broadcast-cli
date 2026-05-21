@@ -85,18 +85,24 @@ class LiveBroadcastApp(App):
         poll_relay: float = 2.0,
         poll_meta: float = 60.0,
         render_interval: float = 0.5,
+        sound: bool = True,
     ) -> None:
         super().__init__()
         self.game_id = game_id
         self.poll_relay = poll_relay
         self.poll_meta = poll_meta
         self.render_interval = render_interval
+        self.sound = sound
         self.client: KBOClient | None = None
         self._relay: dict[str, Any] = {}
         self._game: Game | None = None
         self._record: dict[str, Any] = {}
         self._error: str | None = None
         self._dirty: bool = True
+        # 이전 폭 추적 (반응형 강제 재렌더용)
+        self._last_widths: dict[str, int] = {}
+        # 이전 점수 추적 (사운드 트리거용)
+        self._last_score: tuple[str, str] | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -140,6 +146,22 @@ class LiveBroadcastApp(App):
         try:
             data = await self.client.relay(self.game_id)
             if data:
+                # 점수 변경 감지 → 사운드
+                cgs = data.get("currentGameState") or {}
+                away_score = str(cgs.get("awayScore", "0"))
+                home_score = str(cgs.get("homeScore", "0"))
+                if self._last_score is not None and self.sound:
+                    prev_a, prev_h = self._last_score
+                    scored_team = None
+                    if away_score != prev_a:
+                        scored_team = self._game.away_team_code if self._game else None
+                    elif home_score != prev_h:
+                        scored_team = self._game.home_team_code if self._game else None
+                    if scored_team:
+                        from . import sound as S
+                        S.play_for_team(scored_team)
+                self._last_score = (away_score, home_score)
+
                 self._relay = data
                 self._error = None
                 self._dirty = True
@@ -165,14 +187,20 @@ class LiveBroadcastApp(App):
     # ───────────────────── render ─────────────────────
 
     def _render(self) -> None:
+        # 폭 변화 감지 — 반응형 layout 강제 재렌더
+        field_w = self.query_one("#field", FieldWidget).size.width or 80
+        if self._last_widths.get("field") != field_w:
+            self._last_widths["field"] = field_w
+            self._dirty = True
+
         if not self._dirty:
             return
         self._dirty = False
+
         if self._error and not self._relay:
             self.query_one("#relay", RelayWidget).update(f"[red]{self._error}[/]")
             return
         self.query_one("#scorebox", ScoreBoxWidget).update(self._scorebox_panel())
-        field_w = self.query_one("#field", FieldWidget).size.width or 80
         self.query_one("#field", FieldWidget).update(self._field_panel(width=field_w))
         self.query_one("#ondeck", OnDeckWidget).update(self._ondeck_panel())
         self.query_one("#pitcher-card", PitcherCardWidget).update(self._pitcher_card())
