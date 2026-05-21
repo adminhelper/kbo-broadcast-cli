@@ -534,6 +534,82 @@ def notify_run(
         console.print("\n[dim]워처 종료[/]")
 
 
+@app.command("player", help="선수 정보 + 사진 (이름 또는 pcode)")
+def player(
+    query: str = typer.Argument(..., help="선수 이름(예: '김도영') 또는 네이버 pcode(숫자)"),
+    no_image: bool = typer.Option(False, "--no-image", help="사진 출력 생략"),
+    width: int = typer.Option(18, "--width", "-w", help="사진 폭(cell)"),
+    height: int = typer.Option(10, "--height", help="사진 높이(cell)"),
+) -> None:
+    """선수 이름이 들어오면 오늘 KBO 경기 라인업에서 매칭한다.
+
+    pcode 직접 지정 시: 그 코드로 바로 사진/정보 조회.
+    """
+    from . import images as I
+
+    pcode: str | None = None
+    info: dict | None = None  # {'name', 'pos', 'hittype', 'team'}
+
+    if query.isdigit():
+        pcode = query
+    else:
+        # 오늘 일정 → 각 게임의 relay에서 라인업 검색
+        async def _go():
+            results: list[tuple[str, dict, str]] = []
+            async with KBOClient() as c:
+                games = await c.schedule(now_kst_date())
+                # 각 게임 relay 받아서 home/away batter 명단에서 이름 매칭
+                tasks = [c.relay(g.game_id) for g in games]
+                relays = await asyncio.gather(*tasks, return_exceptions=True)
+                for g, r in zip(games, relays):
+                    if not isinstance(r, dict):
+                        continue
+                    for side, team_code in (("homeEntry", g.home_team_code),
+                                            ("awayEntry", g.away_team_code)):
+                        batters = (r.get(side) or {}).get("batter") or []
+                        for b in batters:
+                            if query in (b.get("name") or ""):
+                                results.append((b.get("pcode"), b, team_code))
+                                break
+            return results
+
+        results = _run(_go())
+        if not results:
+            console.print(f"[yellow]'{query}' 선수를 오늘 경기 라인업에서 찾지 못했습니다.[/]")
+            console.print("[dim]네이버 pcode를 직접 지정해보세요: kbo player 65586[/]")
+            return
+        pcode, info, team_code = results[0]
+        info = {**info, "team": team_code} if info else None
+
+    # 사진 출력
+    if not no_image:
+        if I.supports_inline_image():
+            rendered = I.render_player(pcode, width=width, height=height)
+            if rendered:
+                # Rich 마크업 우회: 직접 stdout으로 escape 시퀀스 전송
+                import sys
+                sys.stdout.write(rendered)
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+            else:
+                console.print(f"[dim](사진을 받지 못했습니다 — pcode: {pcode})[/]")
+        else:
+            console.print("[dim](현재 터미널에서 사진 출력 불가 — iTerm2/WezTerm 또는 chafa 필요)[/]")
+
+    # 텍스트 정보
+    if info:
+        from .data.teams import team as _team
+        t = _team(info.get("team"))
+        console.print(Text.from_markup(
+            f"[bold {t['color']}]{info.get('name', '?')}[/]   "
+            f"[dim]{t['name']}[/]   "
+            f"[dim]포지션:[/] {info.get('pos', '-')}   "
+            f"[dim]타격형:[/] {info.get('hittype', '-')}"
+        ))
+    else:
+        console.print(f"[dim]pcode: {pcode}  (사진만 출력)[/]")
+
+
 @app.command("setup", help="초기 설정 - 선호 팀 등록")
 def setup() -> None:
     _run_setup_wizard()
